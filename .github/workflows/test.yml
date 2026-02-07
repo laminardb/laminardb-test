@@ -262,34 +262,31 @@ jobs:
           done
 
       # ── Issue Regression Detection ────────────────────────────
-      - name: Check if issue #35 (Cascading MVs) is fixed
+      - name: Check known issues
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           P2_OUTPUT: ${{ steps.phase2.outputs.output }}
-        run: |
-          CASCADE_BARS=$(echo "$P2_OUTPUT" | grep -oP 'Level 2 \(cascade\) bars:\s+\K\d+' || echo "0")
-          if [ "$CASCADE_BARS" -gt 0 ] 2>/dev/null; then
-            echo "Issue #35: Cascading MVs now producing $CASCADE_BARS bars!"
-            gh issue comment 35 --repo laminardb/laminardb --body \
-              "CI detected: Cascading MVs now producing **$CASCADE_BARS bars** in laminardb-test Phase 2. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
-          else
-            echo "Issue #35: Cascading MVs still not producing output (cascade_bars=$CASCADE_BARS)"
-          fi
-
-      - name: Check if issue #37 (ASOF JOIN) is fixed
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           P4_OUTPUT: ${{ steps.phase4.outputs.output }}
         run: |
+          echo "### Issue Tracker" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          CASCADE_BARS=$(echo "$P2_OUTPUT" | grep -oP 'Level 2 \(cascade\) bars:\s+\K\d+' || echo "0")
+          if [ "$CASCADE_BARS" -gt 0 ] 2>/dev/null; then
+            echo "laminardb#35 (Cascading MVs): FIXED — $CASCADE_BARS bars produced"
+            echo "- **laminardb#35** Cascading MVs: FIXED ($CASCADE_BARS bars)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "laminardb#35 (Cascading MVs): still failing (cascade_bars=$CASCADE_BARS)"
+            echo "- **laminardb#35** Cascading MVs: not producing output" >> $GITHUB_STEP_SUMMARY
+          fi
+
           ASOF_RESULTS=$(echo "$P4_OUTPUT" | grep -oP 'ASOF results:\s+\K\d+' || echo "0")
           if [ "$ASOF_RESULTS" -gt 0 ] 2>/dev/null; then
-            echo "Issue #37: ASOF JOIN now producing $ASOF_RESULTS results!"
-            gh issue comment 37 --repo laminardb/laminardb --body \
-              "CI detected: ASOF JOIN now producing **$ASOF_RESULTS results** in laminardb-test Phase 4. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
+            echo "laminardb#37 (ASOF JOIN): FIXED — $ASOF_RESULTS results"
+            echo "- **laminardb#37** ASOF JOIN: FIXED ($ASOF_RESULTS results)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "Issue #37: ASOF JOIN still not producing output (asof_results=$ASOF_RESULTS)"
+            echo "laminardb#37 (ASOF JOIN): still failing (asof_results=$ASOF_RESULTS)"
+            echo "- **laminardb#37** ASOF JOIN: not producing output" >> $GITHUB_STEP_SUMMARY
           fi
 
       # ── Cleanup ───────────────────────────────────────────────
