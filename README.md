@@ -1,5 +1,7 @@
 # laminardb-test
 
+[![Test All Phases](https://github.com/laminardb/laminardb-test/actions/workflows/test.yml/badge.svg)](https://github.com/laminardb/laminardb-test/actions/workflows/test.yml)
+
 Test app that exercises each [LaminarDB](https://laminardb.io) pipeline type from the website's code examples, one phase at a time. Includes a TUI dashboard that runs all phases simultaneously with live pipeline visualizations.
 
 ## Results

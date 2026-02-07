@@ -1,0 +1,299 @@
+name: Test All Phases
+
+on:
+  repository_dispatch:
+    types: [laminardb-updated]
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  LAMINAR_PG_HOST: localhost
+  LAMINAR_PG_USER: laminar
+  LAMINAR_PG_PASSWORD: laminar
+
+jobs:
+  test:
+    name: Build & Test All Phases
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: shop
+          POSTGRES_USER: laminar
+          POSTGRES_PASSWORD: laminar
+        options: >-
+          --health-cmd "pg_isready -U laminar -d shop"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          -c wal_level=logical
+          -c max_replication_slots=4
+          -c max_wal_senders=4
+        ports:
+          - 5432:5432
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────
+      - name: Checkout laminardb-test
+        uses: actions/checkout@v4
+
+      - name: Checkout laminardb (sibling directory for path deps)
+        uses: actions/checkout@v4
+        with:
+          repository: laminardb/laminardb
+          path: ../laminardb
+
+      # ── Setup ─────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
+      # ── Services ──────────────────────────────────────────────
+      - name: Start Redpanda
+        run: |
+          docker run -d --name redpanda \
+            -p 19092:19092 -p 18082:18082 -p 9644:9644 \
+            redpandadata/redpanda:v24.1.1 \
+            redpanda start \
+            --smp=1 --memory=512M --overprovisioned \
+            --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092 \
+            --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092 \
+            --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082 \
+            --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082 \
+            --mode dev-container
+
+      - name: Init Postgres (CDC tables + publication)
+        run: |
+          PGPASSWORD=laminar psql -h localhost -U laminar -d shop -f sql/init-cdc.sql
+
+      - name: Wait for Redpanda
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec redpanda rpk cluster health 2>/dev/null | grep -q "HEALTHY"; then
+              echo "Redpanda is healthy"
+              break
+            fi
+            echo "Waiting for Redpanda... ($i/30)"
+            sleep 2
+          done
+
+      # ── Build ─────────────────────────────────────────────────
+      - name: Build
+        run: cargo build
+
+      # ── Run Phases ────────────────────────────────────────────
+      - name: "Phase 1: Rust API"
+        id: phase1
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase1 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 2: Streaming SQL"
+        id: phase2
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase2 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 3: Kafka Pipeline"
+        id: phase3
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase3 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 4: Stream Joins"
+        id: phase4
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase4 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 5: CDC Pipeline"
+        id: phase5
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase5 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 6: Bonus (HOP, SESSION, EMIT ON UPDATE)"
+        id: phase6
+        timeout-minutes: 2
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase6 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      # ── Results Summary ───────────────────────────────────────
+      - name: Generate Job Summary
+        if: always()
+        run: |
+          extract_status() {
+            local output="$1"
+            local phase="$2"
+            if echo "$output" | grep -q "PASS"; then
+              if echo "$output" | grep -q "FAIL\|SKIP"; then
+                echo "PARTIAL"
+              else
+                echo "PASS"
+              fi
+            elif echo "$output" | grep -q "FAIL"; then
+              echo "FAIL"
+            else
+              echo "UNKNOWN"
+            fi
+          }
+
+          extract_line() {
+            local output="$1"
+            local pattern="$2"
+            echo "$output" | grep "$pattern" | head -1 | sed 's/^[[:space:]]*//'
+          }
+
+          P1_STATUS=$(extract_status "${{ steps.phase1.outputs.output }}" "1")
+          P2_STATUS=$(extract_status "${{ steps.phase2.outputs.output }}" "2")
+          P3_STATUS=$(extract_status "${{ steps.phase3.outputs.output }}" "3")
+          P4_STATUS=$(extract_status "${{ steps.phase4.outputs.output }}" "4")
+          P5_STATUS=$(extract_status "${{ steps.phase5.outputs.output }}" "5")
+          P6_STATUS=$(extract_status "${{ steps.phase6.outputs.output }}" "6")
+
+          STATUS_EMOJI() {
+            case "$1" in
+              PASS) echo "✅" ;;
+              PARTIAL) echo "🟡" ;;
+              FAIL) echo "❌" ;;
+              *) echo "❓" ;;
+            esac
+          }
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ## 🧪 laminardb-test Results
+
+          | Phase | Description | Status | Details |
+          |-------|-------------|--------|---------|
+          HEADER
+
+          echo "| 1 | Rust API | $(STATUS_EMOJI $P1_STATUS) $P1_STATUS | builder, execute, source, subscribe, push_batch, watermark, poll |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2 | Streaming SQL | $(STATUS_EMOJI $P2_STATUS) $P2_STATUS | tumble, first_value/last_value, cascading MVs |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3 | Kafka Pipeline | $(STATUS_EMOJI $P3_STATUS) $P3_STATUS | FROM KAFKA, INTO KAFKA, \${VAR} substitution |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4 | Stream Joins | $(STATUS_EMOJI $P4_STATUS) $P4_STATUS | ASOF JOIN, stream-stream INNER JOIN |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5 | CDC Pipeline | $(STATUS_EMOJI $P5_STATUS) $P5_STATUS | FROM postgres-cdc, _op filter, aggregation |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6+ | Bonus | $(STATUS_EMOJI $P6_STATUS) $P6_STATUS | HOP window, SESSION window, EMIT ON UPDATE |" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase Output" >> $GITHUB_STEP_SUMMARY
+
+          for PHASE in 1 2 3 4 5 6; do
+            STEP_ID="phase${PHASE}"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Phase ${PHASE} output</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            case $PHASE in
+              1) echo "${{ steps.phase1.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              2) echo "${{ steps.phase2.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              3) echo "${{ steps.phase3.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              4) echo "${{ steps.phase4.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              5) echo "${{ steps.phase5.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              6) echo "${{ steps.phase6.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+            esac
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          done
+
+      # ── Issue Regression Detection ────────────────────────────
+      - name: Check if issue #35 (Cascading MVs) is fixed
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          P2_OUTPUT="${{ steps.phase2.outputs.output }}"
+          CASCADE_BARS=$(echo "$P2_OUTPUT" | grep -oP 'Level 2 \(cascade\) bars:\s+\K\d+' || echo "0")
+          if [ "$CASCADE_BARS" -gt 0 ] 2>/dev/null; then
+            echo "🎉 Issue #35: Cascading MVs now producing $CASCADE_BARS bars!"
+            gh issue comment 35 --repo laminardb/laminardb --body \
+              "🤖 **CI detected**: Cascading MVs now producing **$CASCADE_BARS bars** in laminardb-test Phase 2. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
+          else
+            echo "Issue #35: Cascading MVs still not producing output (cascade_bars=$CASCADE_BARS)"
+          fi
+
+      - name: Check if issue #37 (ASOF JOIN) is fixed
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          P4_OUTPUT="${{ steps.phase4.outputs.output }}"
+          ASOF_RESULTS=$(echo "$P4_OUTPUT" | grep -oP 'ASOF results:\s+\K\d+' || echo "0")
+          if [ "$ASOF_RESULTS" -gt 0 ] 2>/dev/null; then
+            echo "🎉 Issue #37: ASOF JOIN now producing $ASOF_RESULTS results!"
+            gh issue comment 37 --repo laminardb/laminardb --body \
+              "🤖 **CI detected**: ASOF JOIN now producing **$ASOF_RESULTS results** in laminardb-test Phase 4. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
+          else
+            echo "Issue #37: ASOF JOIN still not producing output (asof_results=$ASOF_RESULTS)"
+          fi
+
+      # ── Cleanup ───────────────────────────────────────────────
+      - name: Stop Redpanda
+        if: always()
+        run: docker stop redpanda && docker rm redpanda || true
