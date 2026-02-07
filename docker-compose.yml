@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: laminar-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: laminar
+      POSTGRES_PASSWORD: laminar
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
+    volumes:
+      - ./sql/init-cdc.sql:/docker-entrypoint-initdb.d/01-init.sql

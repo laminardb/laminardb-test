@@ -1,6 +1,6 @@
 # Steering Document
 
-> Last Updated: 2026-02-06
+> Last Updated: 2026-02-07
 
 ## Goal
 
@@ -8,48 +8,49 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 
 ## Current Focus
 
-**Phase 1: Rust API** — Get the basic embedded API working end-to-end.
+**Phase 5: CDC Pipeline** — Needs Postgres with logical replication.
+**Bonus phases** — HOP, SESSION, EMIT ON UPDATE (embedded, no external deps).
 
 ## Phase Priority Order
 
-| Priority | Phase | What It Tests | External Deps |
-|----------|-------|--------------|---------------|
-| 1 (now) | Rust API | builder, execute, source, subscribe, push_batch, watermark, poll | None |
-| 2 | Streaming SQL | TUMBLE_START, FIRST/LAST, EMIT ON WINDOW CLOSE, cascading MVs | None |
-| 3 | Kafka Pipeline | Kafka source/sink, ${VAR} substitution, exactly-once | Redpanda (:19092) |
-| 4 | Stream Joins | ASOF JOIN + TOLERANCE, stream-stream INNER JOIN, time bounds | None |
-| 5 | CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | Postgres |
-| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None |
+| Priority | Phase | What It Tests | External Deps | Status |
+|----------|-------|--------------|---------------|--------|
+| 1 (done) | Rust API | builder, execute, source, subscribe, push_batch, watermark, poll | None | **PASS** |
+| 2 (done) | Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | None | **PARTIAL** |
+| 3 (done) | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | Redpanda (:19092) | **PASS** |
+| 4 (done) | Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | None | **PARTIAL** |
+| 5 (next) | CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | Postgres | Not Started |
+| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None | Not Started |
 
 ## Test Matrix
 
-| Phase | Feature | Source |
-|-------|---------|--------|
-| 1 | `LaminarDB::builder()` | Website: Rust API tab |
-| 1 | `.execute()` / `.start()` | Website: Rust API tab |
-| 1 | `.source::<T>()` / `push_batch()` | Website: Rust API tab |
-| 1 | `.subscribe::<T>()` / `poll()` | Website: Rust API tab |
-| 1 | `watermark()` | Website: Rust API tab |
-| 1 | `#[derive(Record)]` | Website: Rust API tab |
-| 1 | `#[derive(FromRecordBatch)]` | Website: Rust API tab |
-| 2 | TUMBLE window | Website: Streaming SQL tab |
-| 2 | TUMBLE_START | Website: Streaming SQL tab |
-| 2 | FIRST/LAST aggregates | Website: Streaming SQL tab |
-| 2 | EMIT ON WINDOW CLOSE | Website: Streaming SQL tab |
-| 2 | Cascading MVs | Website: Streaming SQL tab |
-| 3 | Kafka source (FROM KAFKA) | Website: Kafka Pipeline tab |
-| 3 | Kafka sink (TO KAFKA) | Website: Kafka Pipeline tab |
-| 3 | `${VAR}` config substitution | Website: Kafka Pipeline tab |
-| 3 | exactly-once delivery | Website: Kafka Pipeline tab |
-| 4 | ASOF JOIN + TOLERANCE | Website: Stream Joins tab |
-| 4 | Stream-stream INNER JOIN | Website: Stream Joins tab |
-| 4 | Time-bounded join (BETWEEN) | Website: Stream Joins tab |
-| 5 | Postgres CDC source | Website: CDC Pipeline tab |
-| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab |
-| 5 | Delta Lake sink | Website: CDC Pipeline tab |
-| 6+ | HOP window | Codebase |
-| 6+ | SESSION window | Codebase |
-| 6+ | EMIT ON UPDATE | Codebase |
+| Phase | Feature | Source | Result |
+|-------|---------|--------|--------|
+| 1 | `LaminarDB::builder()` | Website: Rust API tab | **PASS** |
+| 1 | `.execute()` / `.start()` | Website: Rust API tab | **PASS** |
+| 1 | `.source::<T>()` / `push_batch()` | Website: Rust API tab | **PASS** |
+| 1 | `.subscribe::<T>()` / `poll()` | Website: Rust API tab | **PASS** |
+| 1 | `watermark()` | Website: Rust API tab | **PASS** |
+| 1 | `#[derive(Record)]` | Website: Rust API tab | **PASS** |
+| 1 | `#[derive(FromRow)]` | Website: Rust API tab | **PASS** (not FromRecordBatch) |
+| 2 | TUMBLE window | Website: Streaming SQL tab | **PASS** |
+| 2 | TUMBLE_START → `tumble()` | Website: Streaming SQL tab | **PASS** (UDF name differs) |
+| 2 | FIRST/LAST → `first_value/last_value` | Website: Streaming SQL tab | **PASS** (function names differ) |
+| 2 | EMIT ON WINDOW CLOSE | Website: Streaming SQL tab | parsed, **no effect** |
+| 2 | Cascading MVs | Website: Streaming SQL tab | **FAIL** (architectural limit) |
+| 3 | Kafka source (FROM KAFKA) | Website: Kafka Pipeline tab | **PASS** |
+| 3 | Kafka sink (INTO KAFKA) | Website: Kafka Pipeline tab | **PASS** |
+| 3 | `${VAR}` config substitution | Website: Kafka Pipeline tab | **PASS** |
+| 3 | Two sinks from one stream | Implementation detail | **PASS** |
+| 4 | ASOF JOIN + TOLERANCE | Website: Stream Joins tab | **FAIL** (DataFusion limitation) |
+| 4 | Stream-stream INNER JOIN | Website: Stream Joins tab | **PASS** |
+| 4 | Time-bounded join (BETWEEN) | Website: Stream Joins tab | **PASS** (numeric, not INTERVAL) |
+| 5 | Postgres CDC source | Website: CDC Pipeline tab | Not Started |
+| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab | Not Started |
+| 5 | Delta Lake sink | Website: CDC Pipeline tab | Not Started |
+| 6+ | HOP window | Codebase | Not Started |
+| 6+ | SESSION window | Codebase | Not Started |
+| 6+ | EMIT ON UPDATE | Codebase | Not Started |
 
 ## Decisions
 

@@ -19,19 +19,18 @@ cargo run              # TUI with all phases as tabs
 ```
 src/
 ├── main.rs          # Entry point, phase selector
-├── types.rs         # Record + FromRecordBatch structs (input + output)
+├── types.rs         # Record + FromRow structs (input + output)
 ├── generator.rs     # Trade/order/quote data generator
 ├── phase1_api.rs    # Phase 1: Rust API test (website tab 1)
 ├── phase2_sql.rs    # Phase 2: Streaming SQL + cascading MVs (website tab 2)
 ├── phase3_kafka.rs  # Phase 3: Kafka source/sink pipeline (website tab 3)
 ├── phase4_joins.rs  # Phase 4: ASOF + stream-stream joins (website tab 4)
-├── phase5_cdc.rs    # Phase 5: CDC pipeline (website tab 5)
-└── tui.rs           # Ratatui TUI for visual output
-sql/                 # SQL files for each phase (loaded at runtime)
+└── tui.rs           # Ratatui TUI with animated pipeline flow visualization
 docs/
 ├── CONTEXT.md       # Session continuity (where we left off)
+├── PHASES.md        # Detailed per-phase documentation with results
 ├── STEERING.md      # Phase priorities and test matrix
-└── PLAN.md          # Full implementation plan
+└── PLAN.md          # Original implementation plan with SQL + code
 ```
 
 ## Key Documents
@@ -43,23 +42,31 @@ docs/
 ## LaminarDB API Reference (quick)
 
 ```rust
-// Builder
-let db = LaminarDB::builder().buffer_size(65536).build().await?;
+// Builder (with optional Kafka config vars)
+let db = LaminarDB::builder()
+    .config_var("KAFKA_BROKERS", "localhost:19092")
+    .buffer_size(65536)
+    .build().await?;
 
 // Execute SQL
-db.execute("CREATE SOURCE trades (symbol VARCHAR, price DOUBLE, ts BIGINT)").await?;
-db.execute("CREATE MATERIALIZED VIEW ... FROM trades GROUP BY symbol, TUMBLE(...)").await?;
+db.execute("CREATE SOURCE trades (symbol VARCHAR NOT NULL, price DOUBLE NOT NULL, ts BIGINT NOT NULL)").await?;
+db.execute("CREATE STREAM ohlc AS ... FROM trades GROUP BY symbol, TUMBLE(...)").await?;
+db.execute("CREATE SINK output FROM ohlc").await?;
+
+// Kafka connectors (Phase 3)
+db.execute("CREATE SOURCE trades (...) FROM KAFKA (brokers = '${KAFKA_BROKERS}', topic = '...', format = 'json')").await?;
+db.execute("CREATE SINK output FROM stream INTO KAFKA (brokers = '${KAFKA_BROKERS}', topic = '...', format = 'json')").await?;
 
 // Start processing
 db.start().await?;
 
-// Push data (input)
+// Push data (input) — embedded sources only
 let source = db.source::<Trade>("trades")?;
 source.push_batch(vec![Trade { ... }]);
 source.watermark(now());
 
 // Read results (output)
-let sub = db.subscribe::<OhlcBar>("ohlc_1m")?;
+let sub = db.subscribe::<OhlcBar>("ohlc")?;
 while let Some(bars) = sub.poll() { ... }
 ```
 
@@ -75,13 +82,13 @@ Path deps to local laminardb (must be at `../laminardb/`):
 - `laminar-derive` — Record/FromRow macros
 - `laminar-core` — required by Record derive macro at compile time
 
-## Supported Stream Types Being Tested
+## Phase Status
 
-| Phase | Type | SQL | Status |
-|-------|------|-----|--------|
-| 1 | Rust API | TUMBLE + FIRST/LAST | Compiles |
-| 2 | Streaming SQL | TUMBLE_START, cascading MVs, EMIT ON WINDOW CLOSE | Pending |
-| 3 | Kafka Pipeline | FROM KAFKA / TO KAFKA, exactly-once | Pending |
-| 4 | Stream Joins | ASOF JOIN + TOLERANCE, INNER JOIN + BETWEEN | Pending |
-| 5 | CDC Pipeline | POSTGRES_CDC, EMIT CHANGES, DELTA_LAKE sink | Pending |
-| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | Pending |
+| Phase | Type | Key Features | Status |
+|-------|------|-------------|--------|
+| 1 | Rust API | TUMBLE + first_value/last_value, push_batch/poll | **PASS** |
+| 2 | Streaming SQL | tumble() as TUMBLE_START, SUM, cascading MVs | **PARTIAL** (L1 pass, cascade fail) |
+| 3 | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
+| 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PARTIAL** (INNER pass, ASOF fail) |
+| 5 | CDC Pipeline | POSTGRES_CDC, EMIT CHANGES, Delta Lake sink | Not Started |
+| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | Not Started |

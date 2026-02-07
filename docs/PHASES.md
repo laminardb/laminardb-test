@@ -118,16 +118,82 @@ GROUP BY symbol, tumble(bar_start, INTERVAL '10' SECOND);
 
 ## Phase 3: Kafka Pipeline
 
-**File:** not yet implemented | **Status:** Not Started
+**File:** `src/phase3_kafka.rs` | **Status:** PASS
 
-### What it will test
+### What it tests
 
-The website's third tab — Kafka source/sink connectors with Redpanda.
+The website's third tab — full end-to-end Kafka pipeline: external producer → Kafka source connector → SQL aggregation → Kafka sink connector → external consumer.
 
 ### Prerequisites
 
-- Redpanda running on `localhost:19092`
+- Redpanda running on `localhost:19092` (use podman)
 - Topics: `market-trades` (source), `trade-summaries` (sink)
+- Create topics: `podman exec <container> rpk topic create market-trades trade-summaries`
+
+### How it works
+
+1. An `rdkafka::FutureProducer` sends JSON trade messages to the `market-trades` Kafka topic
+2. LaminarDB's `FROM KAFKA` source connector consumes from the topic
+3. SQL aggregation computes COUNT and SUM(price * volume) per symbol per 5s window
+4. Results go to both a local subscriber (for TUI/CLI display) and a Kafka sink (`trade-summaries` topic)
+5. `${KAFKA_BROKERS}` variable substitution via `builder.config_var()`
+
+### SQL (actual working version)
+
+```sql
+-- Source from Kafka
+CREATE SOURCE trades (
+    symbol  VARCHAR NOT NULL,
+    price   DOUBLE NOT NULL,
+    volume  BIGINT NOT NULL,
+    ts      BIGINT NOT NULL
+) FROM KAFKA (
+    brokers = '${KAFKA_BROKERS}',
+    topic = 'market-trades',
+    group_id = 'laminar-test-p3',
+    format = 'json',
+    offset_reset = 'earliest'
+);
+
+-- SQL aggregation
+CREATE STREAM trade_summary AS
+SELECT symbol,
+       COUNT(*) AS trades,
+       SUM(price * CAST(volume AS DOUBLE)) AS notional
+FROM trades
+GROUP BY symbol, TUMBLE(ts, INTERVAL '5' SECOND);
+
+-- Local sink for subscriber
+CREATE SINK summary_local FROM trade_summary;
+
+-- Kafka sink
+CREATE SINK summary_kafka FROM trade_summary
+INTO KAFKA (
+    brokers = '${KAFKA_BROKERS}',
+    topic = 'trade-summaries',
+    format = 'json'
+);
+```
+
+### Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| FROM KAFKA source | **PASS** | Reads JSON from market-trades topic |
+| SQL aggregation | **PASS** | 315 trades → 285 summaries |
+| INTO KAFKA sink | **PASS** | JSON summaries written to trade-summaries topic |
+| ${VAR} substitution | **PASS** | KAFKA_BROKERS resolved to localhost:19092 |
+| Local subscriber | **PASS** | poll() receives aggregated results |
+| Two sinks from one stream | **PASS** | Both local and Kafka sinks work simultaneously |
+
+### Gotchas discovered
+
+- **`FROM KAFKA` works in embedded mode** — the connector pipeline integrates with the embedded pipeline seamlessly
+- **Two sinks from one stream** is supported — `CREATE SINK local FROM stream` + `CREATE SINK kafka FROM stream INTO KAFKA(...)` both work
+- **`config_var()` substitution** — `LaminarDB::builder().config_var("KAFKA_BROKERS", "localhost:19092")` resolves `${KAFKA_BROKERS}` in all SQL statements
+- **Kafka feature flag** — must enable `laminar-db = { features = ["kafka"] }` in Cargo.toml
+- **rdkafka 0.39 cmake-build** — required as direct dependency for producer/consumer code
+- **`CAST(volume AS DOUBLE)`** needed when multiplying BIGINT × DOUBLE in SUM()
 
 ---
 
@@ -209,13 +275,19 @@ The website's fifth tab — Postgres CDC source with `_op` column handling and `
 
 ### What it shows
 
-A tabbed Ratatui dashboard that runs all implemented phases simultaneously. Each tab displays:
+A tabbed Ratatui dashboard that runs all implemented phases simultaneously (Phase 1-4). Each tab displays:
 
-- **Stats panel:** trades pushed, bars/results received, cycle count, uptime
-- **Throughput:** trades/s and bars/s with sparkline history
-- **Latency:** avg/min/max push-to-poll latency with sparkline and color coding
-- **Price bars:** per-symbol latest close price as a bar chart
-- **Data table:** most recent results (OHLC bars or join results)
+- **Stats panel:** trades pushed, bars/results received, cycle count, uptime, throughput, latency
+- **Pipeline flow:** animated visualization of data flowing through the embedded pipeline, showing MemTable registration, `ctx.sql()` execution, subscriber buffers, and Kafka connectors
+- **Data table:** most recent results (OHLC bars, summaries, or join results)
+
+### Pipeline visualization features
+
+- Animated `◆` dot flowing along `─` dashes when data is actively flowing
+- Red `╳` for inactive/failed pipeline paths
+- Pulsing vertical arrows (`│ ▼`) in cyan/blue showing live data flow
+- Per-phase architecture: single source (P1), branching queries (P2), Kafka end-to-end (P3), multi-source multi-query (P4)
+- Live counters showing records at each pipeline stage
 
 ### Controls
 
@@ -228,9 +300,10 @@ A tabbed Ratatui dashboard that runs all implemented phases simultaneously. Each
 ### Running
 
 ```bash
-cargo run              # TUI with all phases
+cargo run              # TUI with all phases (1-4)
 cargo run -- phase1    # Phase 1 CLI only
 cargo run -- phase2    # Phase 2 CLI only
+cargo run -- phase3    # Phase 3 CLI only (needs Redpanda on :19092)
 cargo run -- phase4    # Phase 4 CLI only
 ```
 
@@ -242,9 +315,10 @@ cargo run -- phase4    # Phase 4 CLI only
 
 | Type | Derive | Used by |
 |------|--------|---------|
-| `Trade` | `Record, FromRow` | Phase 1, 2, 4 (input) |
+| `Trade` | `Record, FromRow` | Phase 1, 2, 3, 4 (input) |
 | `OhlcBar` | `FromRow` | Phase 1 (output) |
 | `OhlcBarFull` | `FromRow` | Phase 2 (output, includes bar_start + volume) |
+| `TradeSummary` | `FromRow` | Phase 3 Kafka pipeline (output) |
 | `Quote` | `Record` | Phase 4 ASOF JOIN (input) |
 | `Order` | `Record` | Phase 4 stream-stream JOIN (input) |
 | `AsofEnriched` | `FromRow` | Phase 4 ASOF JOIN (output) |
@@ -398,6 +472,49 @@ ASOF:  DataFusion can't parse ASOF JOIN ──► silent 0 output
 JOIN:  Standard SQL INNER JOIN works ──► 88 matches from 98 orders
 ```
 
+### Phase 3: Kafka end-to-end pipeline
+
+```
+ MarketGenerator
+      │
+      │ generate_trades(ts)
+      │ 5 trades per cycle
+      ▼
+┌──────────┐    produce()     ┌──────────────────────────────────────┐
+│ rdkafka  │ ───── JSON ─────►│  Kafka: market-trades topic          │
+│ Producer │                   │  (Redpanda localhost:19092)          │
+└──────────┘                   └─────────────┬────────────────────────┘
+                                             │
+                                             ▼
+                               ┌──────────────────────────────────────┐
+                               │  LaminarDB                           │
+                               │                                      │
+                               │  FROM KAFKA ──► Arrow RecordBatch    │
+                               │         │                            │
+                               │         ▼                            │
+                               │  ┌────────────────────────────────┐  │
+                               │  │ ctx.sql:                       │  │
+                               │  │ SELECT COUNT(*),               │  │
+                               │  │   SUM(price * volume)          │  │
+                               │  │ GROUP BY symbol, TUMBLE(5s)    │  │
+                               │  └────────────────┬───────────────┘  │
+                               │                   │                  │
+                               │       ┌───────────┴──────────┐      │
+                               │       ▼                      ▼      │
+                               │  subscriber              INTO KAFKA  │
+                               │  trade_summary       trade-summaries │
+                               └───────┬──────────────────────┬───────┘
+                                       │                      │
+                              poll()   ▼                      ▼
+                          ┌──────────┐              ┌──────────────────┐
+                          │ Your App │              │  Kafka: trade-   │
+                          │ TUI/CLI  │              │  summaries topic │
+                          └──────────┘              └──────────────────┘
+
+Result: 315 trades → 285 summaries (PASS)
+        Kafka source ✓  SQL ✓  Kafka sink ✓  ${VAR} ✓
+```
+
 ### What the connector pipeline would look like (not yet tested)
 
 ```
@@ -427,6 +544,9 @@ ASOF JOIN, cascading MVs, and EMIT ON WINDOW CLOSE would work here.
                           ─────────────────     ───────────────────
 Single-source TUMBLE          ✓ PASS                ✓ (expected)
 Cascading MVs                 ✗ FAIL                ✓ (expected)
+FROM KAFKA source             ✓ PASS                ✓ (expected)
+INTO KAFKA sink               ✓ PASS                ✓ (expected)
+${VAR} substitution           ✓ PASS                ✓ (expected)
 ASOF JOIN                     ✗ FAIL                ✓ (expected)
 Stream-stream INNER JOIN      ✓ PASS                ✓ (expected)
 EMIT ON WINDOW CLOSE          ✗ ignored             ✓ (expected)
