@@ -19,24 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: shop
-          POSTGRES_USER: laminar
-          POSTGRES_PASSWORD: laminar
-        options: >-
-          --health-cmd "pg_isready -U laminar -d shop"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-          -c wal_level=logical
-          -c max_replication_slots=4
-          -c max_wal_senders=4
-        ports:
-          - 5432:5432
-
     steps:
       # ── Checkout ──────────────────────────────────────────────
       - name: Checkout laminardb-test
@@ -64,9 +46,20 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake
+        run: sudo apt-get update && sudo apt-get install -y cmake postgresql-client
 
       # ── Services ──────────────────────────────────────────────
+      - name: Start Postgres
+        run: |
+          docker run -d --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_DB=shop \
+            -e POSTGRES_USER=laminar \
+            -e POSTGRES_PASSWORD=laminar \
+            -v ${{ github.workspace }}/sql/init-cdc.sql:/docker-entrypoint-initdb.d/01-init.sql \
+            postgres:16 \
+            postgres -c wal_level=logical -c max_replication_slots=4 -c max_wal_senders=4
+
       - name: Start Redpanda
         run: |
           docker run -d --name redpanda \
@@ -80,9 +73,16 @@ jobs:
             --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082 \
             --mode dev-container
 
-      - name: Init Postgres (CDC tables + publication)
+      - name: Wait for Postgres
         run: |
-          PGPASSWORD=laminar psql -h localhost -U laminar -d shop -f sql/init-cdc.sql
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -U laminar -d shop 2>/dev/null; then
+              echo "Postgres is ready"
+              break
+            fi
+            echo "Waiting for Postgres... ($i/30)"
+            sleep 2
+          done
 
       - name: Wait for Redpanda
         run: |
@@ -294,6 +294,8 @@ jobs:
           fi
 
       # ── Cleanup ───────────────────────────────────────────────
-      - name: Stop Redpanda
+      - name: Stop containers
         if: always()
-        run: docker stop redpanda && docker rm redpanda || true
+        run: |
+          docker stop redpanda postgres 2>/dev/null || true
+          docker rm redpanda postgres 2>/dev/null || true
