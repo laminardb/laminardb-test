@@ -43,7 +43,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y cmake postgresql-client libcurl4-openssl-dev pkg-config libssl-dev
 
       # ── Services ──────────────────────────────────────────────
       - name: Start Postgres
