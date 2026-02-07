@@ -9,7 +9,7 @@ Test app that exercises each [LaminarDB](https://laminardb.io) pipeline type fro
 | Phase | Feature | Status |
 |-------|---------|--------|
 | 1: Rust API | builder, execute, source, subscribe, push_batch, watermark, poll | **PASS** |
-| 2: Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | **PARTIAL** (cascading MV: architectural limit) |
+| 2: Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | **PASS** |
 | 3: Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
 | 4: Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | **PARTIAL** (ASOF: DataFusion limitation) |
 | 5: CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | **PARTIAL** (connector stub — no replication I/O) |

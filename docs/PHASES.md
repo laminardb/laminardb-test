@@ -64,7 +64,7 @@ GROUP BY symbol, TUMBLE(ts, INTERVAL '5' SECOND);
 
 ## Phase 2: Streaming SQL
 
-**File:** `src/phase2_sql.rs` | **Status:** PARTIAL PASS
+**File:** `src/phase2_sql.rs` | **Status:** PASS
 
 ### What it tests
 
@@ -89,7 +89,7 @@ SELECT symbol,
 FROM trades
 GROUP BY symbol, tumble(ts, INTERVAL '5' SECOND);
 
--- Level 2: FAIL (creates successfully but produces 0 output)
+-- Level 2: PASS (cascading MV — reads from ohlc_5s stream output)
 CREATE STREAM ohlc_10s AS
 SELECT symbol,
        CAST(tumble(bar_start, INTERVAL '10' SECOND) AS BIGINT) AS bar_start,
@@ -105,13 +105,13 @@ GROUP BY symbol, tumble(bar_start, INTERVAL '10' SECOND);
 | Test | Result | Notes |
 |------|--------|-------|
 | Level 1 (ohlc_5s FROM trades) | **PASS** | 440 bars from 490 trades |
-| Level 2 (ohlc_10s FROM ohlc_5s) | **FAIL** | 0 output — cascading MVs not supported |
+| Level 2 (ohlc_10s FROM ohlc_5s) | **PASS** | Cascading MVs now working (fixed in [#35](https://github.com/laminardb/laminardb/issues/35)) |
 
 ### Gotchas discovered
 
 - **`tumble()`** not `TUMBLE_START()` — the registered UDF name is `tumble`
 - **`tumble()` returns `Timestamp(Millisecond)`** not Int64 — must `CAST(... AS BIGINT)` for i64 fields
-- **Cascading MVs don't work** in embedded mode — `start_embedded_pipeline()` only feeds `CREATE SOURCE` entries to the executor. Stream results go to subscribers but never loop back as input. (GitHub issue [#35](https://github.com/laminardb/laminardb/issues/35))
+- **Cascading MVs now work** in embedded mode — previously stream results only went to subscribers and never looped back as input, but this was fixed. (GitHub issue [#35](https://github.com/laminardb/laminardb/issues/35), confirmed by CI)
 - **EMIT ON WINDOW CLOSE** is parsed but has no effect in micro-batch model
 
 ---
@@ -514,7 +514,7 @@ watermark(ts)    ──────────►  │
 poll()           ◄────────── Subscriber buffer
 ```
 
-**Key limitation:** Only `CREATE SOURCE` tables feed data into the executor. Stream results exit through subscribers but never re-enter as input — which is why cascading MVs and ASOF JOINs (which need the custom operator path) don't work.
+**Key limitation:** ASOF JOINs don't work through this path because DataFusion can't parse the `ASOF JOIN ... MATCH_CONDITION()` syntax — the custom `AsofJoinOperator` is only reachable through the connector pipeline. Cascading MVs were fixed and now work correctly ([#35](https://github.com/laminardb/laminardb/issues/35)).
 
 ---
 
@@ -553,7 +553,7 @@ poll()           ◄────────── Subscriber buffer
 Result: 490 trades ──► 440 OHLC bars (PASS)
 ```
 
-### Phase 2: Cascading streams (level 2 fails)
+### Phase 2: Cascading streams
 
 ```
  MarketGenerator
@@ -571,19 +571,19 @@ Result: 490 trades ──► 440 OHLC bars (PASS)
 │          │      poll()        │                  ▼                   │
 │          │ ◄─────────────────│  STREAM: ohlc_5s ── PASS (440 bars) │
 │          │                    │         │                            │
-│          │                    │         │ ✗ NOT fed back as input    │
+│          │                    │         │ ✓ Fed back as MemTable     │
 │          │                    │         ▼                            │
 │          │                    │  ┌────────────────────┐              │
 │          │                    │  │ ctx.sql: ohlc_10s  │              │
-│          │                    │  │ FROM ohlc_5s       │◄── empty!   │
+│          │                    │  │ FROM ohlc_5s       │              │
 │          │                    │  └────────┬───────────┘              │
 │          │                    │           │                          │
 │          │      poll()        │           ▼                          │
-│          │ ◄ ─ ─ ─ ─ ─ ─ ─ ─│  STREAM: ohlc_10s ── FAIL (0 bars) │
-└──────────┘   (nothing)        └──────────────────────────────────────┘
+│          │ ◄─────────────────│  STREAM: ohlc_10s ── PASS            │
+└──────────┘                    └──────────────────────────────────────┘
 
-Problem: ohlc_5s output goes to subscribers, never loops back
-         as a MemTable for ohlc_10s to read from.
+Cascading MVs: ohlc_5s output loops back as input for ohlc_10s.
+Fixed in laminardb#35.
 ```
 
 ### Phase 4: Multi-source joins
@@ -703,7 +703,7 @@ ASOF JOIN, cascading MVs, and EMIT ON WINDOW CLOSE would work here.
                           (ctx.sql path)        (operator DAG path)
                           ─────────────────     ───────────────────
 Single-source TUMBLE          ✓ PASS                ✓ (expected)
-Cascading MVs                 ✗ FAIL                ✓ (expected)
+Cascading MVs                 ✓ PASS                ✓ (expected)
 FROM KAFKA source             ✓ PASS                ✓ (expected)
 INTO KAFKA sink               ✓ PASS                ✓ (expected)
 ${VAR} substitution           ✓ PASS                ✓ (expected)
