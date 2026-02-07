@@ -6,8 +6,8 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_DB: shop
-      POSTGRES_USER: laminar
-      POSTGRES_PASSWORD: laminar
+      POSTGRES_USER: ${LAMINAR_PG_USER:-laminar}
+      POSTGRES_PASSWORD: ${LAMINAR_PG_PASSWORD:-laminar}
     command:
       - postgres
       - -c

@@ -281,6 +281,7 @@ The website's fifth tab — Postgres CDC source with logical replication, `_op` 
 
 ```sql
 -- CDC source — connector name must be double-quoted
+-- Credentials resolved via .config_var() (env: LAMINAR_PG_HOST, LAMINAR_PG_USER, LAMINAR_PG_PASSWORD)
 CREATE SOURCE orders_cdc (
     id INT NOT NULL,
     customer_id INT NOT NULL,
@@ -288,11 +289,11 @@ CREATE SOURCE orders_cdc (
     status VARCHAR NOT NULL,
     ts BIGINT NOT NULL
 ) FROM "postgres-cdc" (
-    'host' = 'localhost',
+    'host' = '${PG_HOST}',
     'port' = '5432',
     'database' = 'shop',
-    'username' = 'laminar',
-    'password' = 'laminar',
+    'username' = '${PG_USER}',
+    'password' = '${PG_PASSWORD}',
     'slot.name' = 'laminar_orders',
     'publication' = 'laminar_pub',
     'snapshot.mode' = 'never'

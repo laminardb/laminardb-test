@@ -29,13 +29,16 @@ pub struct Phase5Handles {
 /// 2. Configures LaminarDB with FROM POSTGRES_CDC source + SQL aggregation.
 /// 3. Returns handles for inserting data and polling results.
 pub async fn setup() -> Result<Phase5Handles, Box<dyn std::error::Error>> {
-    // Test Postgres connectivity
-    let (pg_client, connection) = tokio_postgres::connect(
-        "host=localhost port=5432 dbname=shop user=laminar password=laminar",
-        NoTls,
-    )
-    .await
-    .map_err(|e| format!("Postgres not available on localhost:5432: {e}"))?;
+    // Test Postgres connectivity (credentials via env vars, defaults for local dev)
+    let pg_host = std::env::var("LAMINAR_PG_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let pg_user = std::env::var("LAMINAR_PG_USER").unwrap_or_else(|_| "laminar".to_string());
+    let pg_password = std::env::var("LAMINAR_PG_PASSWORD").unwrap_or_else(|_| "laminar".to_string());
+    let pg_conn = format!(
+        "host={pg_host} port=5432 dbname=shop user={pg_user} password={pg_password}"
+    );
+    let (pg_client, connection) = tokio_postgres::connect(&pg_conn, NoTls)
+        .await
+        .map_err(|e| format!("Postgres not available on {pg_host}:5432: {e}"))?;
 
     // Spawn connection handler in background
     tokio::spawn(async move {
@@ -64,6 +67,9 @@ pub async fn setup() -> Result<Phase5Handles, Box<dyn std::error::Error>> {
 
     let db = LaminarDB::builder()
         .buffer_size(65536)
+        .config_var("PG_HOST", &pg_host)
+        .config_var("PG_USER", &pg_user)
+        .config_var("PG_PASSWORD", &pg_password)
         .build()
         .await?;
 
@@ -77,11 +83,11 @@ pub async fn setup() -> Result<Phase5Handles, Box<dyn std::error::Error>> {
                 status VARCHAR NOT NULL,
                 ts BIGINT NOT NULL
             ) FROM \"postgres-cdc\" (
-                'host' = 'localhost',
+                'host' = '${PG_HOST}',
                 'port' = '5432',
                 'database' = 'shop',
-                'username' = 'laminar',
-                'password' = 'laminar',
+                'username' = '${PG_USER}',
+                'password' = '${PG_PASSWORD}',
                 'slot.name' = 'laminar_orders',
                 'publication' = 'laminar_pub',
                 'snapshot.mode' = 'never'
