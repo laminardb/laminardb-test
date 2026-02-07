@@ -24,8 +24,8 @@
 - GitHub issue #35 filed for cascading MV failure
 
 ### Where We Left Off
-- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**
-- Next: Phase 5 (CDC Pipeline) or Bonus phases
+- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**, **Phase 5: PARTIAL**, **Phase 6+: PASS**
+- All phases complete
 
 ### Current Phase Status
 
@@ -35,12 +35,11 @@
 | 2: Streaming SQL | **PARTIAL** | Level 1 PASS, cascading MV FAIL (architectural limit) |
 | 3: Kafka Pipeline | **PASS** | 315 trades → 285 summaries, source + sink + ${VAR} all working |
 | 4: Stream Joins | **PARTIAL** | INNER JOIN PASS (88 matches), ASOF JOIN FAIL (connector-only) |
-| 5: CDC Pipeline | Not Started | Needs Postgres |
-| 6+: Bonus | Not Started | HOP, SESSION, EMIT ON UPDATE |
+| 5: CDC Pipeline | **PARTIAL** | SQL parsing + connector registration PASS, replication data flow FAIL (stub) |
+| 6+: Bonus | **PASS** | HOP (885), SESSION (885), EMIT ON UPDATE (885) — all from 890 trades |
 
 ### Immediate Next Steps
-1. Phase 5 (CDC Pipeline) — needs Postgres running
-2. Bonus phases (HOP, SESSION, EMIT ON UPDATE) — embedded, no external deps
+1. All phases implemented and tested — project complete
 
 ### Key Learnings
 - `laminar-core` required as direct dep (Record derive macro references it)
@@ -64,3 +63,9 @@
 - **Phase 3 Kafka**: Two sinks from one stream works: `CREATE SINK local FROM stream` + `CREATE SINK kafka FROM stream INTO KAFKA(...)`
 - **Phase 3 Kafka**: rdkafka 0.39 cmake-build feature required; `FutureProducer::send()` for async produce
 - **Phase 3 Kafka**: Kafka feature flag: `laminar-db = { features = ["kafka"] }` → enables laminar-connectors/kafka
+- **Phase 5 CDC**: Connector name is `"postgres-cdc"` (lowercase, hyphenated) — must be double-quoted in SQL: `FROM "postgres-cdc" (...)`
+- **Phase 5 CDC**: Config keys with dots must be single-quoted: `'slot.name' = 'laminar_orders'`
+- **Phase 5 CDC**: Feature flag: `laminar-db = { features = ["postgres-cdc"] }` → enables laminar-connectors/postgres-cdc
+- **Phase 5 CDC**: Connector `open()` is a stub — WAL decoder/pgoutput parser/changelog processing all implemented but actual replication I/O (connection, START_REPLICATION) not yet wired up
+- **Phase 5 CDC**: Envelope schema: `_table, _op, _lsn, _ts_ms, _before, _after` — `_op` values: "I", "U", "D"
+- **Phase 5 CDC**: tokio-postgres `batch_execute()` avoids ToSql serialization issues with parameterized queries

@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 # LaminarDB (path deps to local checkout)
-laminar-db = { path = "../laminardb/crates/laminar-db", features = ["kafka"] }
+laminar-db = { path = "../laminardb/crates/laminar-db", features = ["kafka", "postgres-cdc"] }
 laminar-derive = { path = "../laminardb/crates/laminar-derive" }
 laminar-core = { path = "../laminardb/crates/laminar-core" }
 
@@ -26,6 +26,9 @@ tokio = { version = "1.49", features = ["full"] }
 # Kafka (direct dep for producer/consumer in Phase 3)
 rdkafka = { version = "0.39", features = ["cmake-build"] }
 serde_json = "1"
+
+# Postgres (direct dep for inserting test data in Phase 5)
+tokio-postgres = "0.7"
 
 # Utilities
 chrono = "0.4"

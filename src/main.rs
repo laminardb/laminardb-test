@@ -7,12 +7,15 @@
 //!   cargo run -- phase3    # Kafka pipeline (needs Redpanda)
 //!   cargo run -- phase4    # Stream joins (ASOF + stream-stream)
 //!   cargo run -- phase5    # CDC pipeline (needs Postgres)
+//!   cargo run -- phase6    # Bonus: HOP, SESSION, EMIT ON UPDATE
 
 mod generator;
 mod phase1_api;
 mod phase2_sql;
 mod phase3_kafka;
 mod phase4_joins;
+mod phase5_cdc;
+mod phase6_bonus;
 mod tui;
 mod types;
 
@@ -27,10 +30,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("phase2") => phase2_sql::run().await?,
         Some("phase3") => phase3_kafka::run().await?,
         Some("phase4") => phase4_joins::run().await?,
-        // Some("phase5") => phase5_cdc::run().await?,
+        Some("phase5") => phase5_cdc::run().await?,
+        Some("phase6") | Some("bonus") => phase6_bonus::run().await?,
         Some(other) => {
             eprintln!("Unknown phase: {}", other);
-            eprintln!("Available: (no args for TUI), phase1, phase2, phase3, phase4, phase5");
+            eprintln!("Available: (no args for TUI), phase1, phase2, phase3, phase4, phase5, phase6/bonus");
             std::process::exit(1);
         }
     }

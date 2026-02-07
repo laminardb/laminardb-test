@@ -48,7 +48,7 @@ impl MarketGenerator {
             *price += change;
 
             let volume = rng.gen_range(10..500);
-            let side = if rng.gen_bool(0.5) { "buy" } else { "sell" };
+            let _side = if rng.gen_bool(0.5) { "buy" } else { "sell" };
 
             trades.push(Trade {
                 symbol,

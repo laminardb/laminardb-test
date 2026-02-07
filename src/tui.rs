@@ -21,7 +21,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, Tabs};
 use ratatui::Terminal;
 
 use crate::generator::MarketGenerator;
-use crate::types::{AsofEnriched, OhlcBar, OhlcBarFull, TradeSummary, TradeOrderMatch};
+use crate::types::{AsofEnriched, CustomerTotal, HopVolume, OhlcBar, OhlcBarFull, SessionBurst, TradeSummary, TradeOrderMatch};
 
 const MAX_RECENT_BARS: usize = 50;
 const SPARKLINE_HISTORY: usize = 60; // ~60 samples at 5 FPS = 12 seconds
@@ -218,6 +218,51 @@ impl App {
         self.record_bars(phase_idx, converted);
     }
 
+    /// Record HOP volume results (Phase 6) — maps to OhlcBar for display.
+    fn record_hop(&mut self, phase_idx: usize, rows: Vec<HopVolume>) {
+        let converted: Vec<OhlcBar> = rows
+            .into_iter()
+            .map(|r| OhlcBar {
+                symbol: r.symbol,
+                open: r.trade_count as f64,
+                high: r.avg_price,
+                low: r.total_volume as f64,
+                close: r.avg_price,
+            })
+            .collect();
+        self.record_bars(phase_idx, converted);
+    }
+
+    /// Record SESSION burst results (Phase 6) — maps to OhlcBar for display.
+    fn record_session(&mut self, phase_idx: usize, rows: Vec<SessionBurst>) {
+        let converted: Vec<OhlcBar> = rows
+            .into_iter()
+            .map(|r| OhlcBar {
+                symbol: r.symbol,
+                open: r.burst_trades as f64,
+                high: r.high,
+                low: r.low,
+                close: r.burst_volume as f64,
+            })
+            .collect();
+        self.record_bars(phase_idx, converted);
+    }
+
+    /// Record CDC customer totals (Phase 5) — maps to OhlcBar for display.
+    fn record_cdc_totals(&mut self, phase_idx: usize, rows: Vec<CustomerTotal>) {
+        let converted: Vec<OhlcBar> = rows
+            .into_iter()
+            .map(|r| OhlcBar {
+                symbol: format!("C{}", r.customer_id),
+                open: r.total_orders as f64,
+                high: r.total_spent,
+                low: 0.0,
+                close: r.total_spent,
+            })
+            .collect();
+        self.record_bars(phase_idx, converted);
+    }
+
     /// Record stream-stream JOIN results (Phase 4) — maps to OhlcBar for display.
     fn record_join_match(&mut self, phase_idx: usize, rows: Vec<TradeOrderMatch>) {
         let converted: Vec<OhlcBar> = rows
@@ -285,6 +330,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         "Phase 4: Stream Joins",
         "ASOF JOIN (backward+tolerance), stream-stream INNER JOIN",
     );
+    let p5_idx = app.add_phase(
+        "Phase 5: CDC Pipeline",
+        "FROM POSTGRES_CDC source, CDC events, customer aggregation",
+    );
+    let p6_idx = app.add_phase(
+        "Phase 6+: Bonus",
+        "HOP window, SESSION window, EMIT ON UPDATE",
+    );
 
     // Setup Phase 1
     let p1_handles = match crate::phase1_api::setup().await {
@@ -338,10 +391,37 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Setup Phase 5 (CDC — may fail if Postgres is down)
+    let p5_handles = match crate::phase5_cdc::setup().await {
+        Ok(h) => {
+            app.phases[p5_idx].status = PhaseStatus::Running;
+            Some(h)
+        }
+        Err(e) => {
+            app.phases[p5_idx].status = PhaseStatus::Fail("setup failed");
+            eprintln!("Phase 5 setup error: {e}");
+            None
+        }
+    };
+
+    // Setup Phase 6 (Bonus — embedded, no external deps)
+    let p6_handles = match crate::phase6_bonus::setup().await {
+        Ok(h) => {
+            app.phases[p6_idx].status = PhaseStatus::Running;
+            Some(h)
+        }
+        Err(e) => {
+            app.phases[p6_idx].status = PhaseStatus::Fail("setup failed");
+            eprintln!("Phase 6 setup error: {e}");
+            None
+        }
+    };
+
     let mut gen1 = MarketGenerator::new();
     let mut gen2 = MarketGenerator::new();
     let mut gen3 = MarketGenerator::new();
     let mut gen4 = MarketGenerator::new();
+    let mut gen6 = MarketGenerator::new();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -545,6 +625,104 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 app.phases[p4_idx].status = PhaseStatus::Pass;
             }
         }
+
+        // Phase 5: insert orders into Postgres + poll CDC subscriber
+        if let Some(ref h) = p5_handles {
+            // Insert batch of orders every other cycle (slower rate for CDC)
+            if app.cycle % 3 == 0 {
+                match crate::phase5_cdc::insert_orders(&h.pg_client, app.cycle).await {
+                    Ok(count) => {
+                        app.record_push(p5_idx, count as u64);
+                        app.record_pipeline_count(p5_idx, "inserted", count as u64);
+                    }
+                    Err(e) => {
+                        eprintln!("Phase 5 insert error: {e}");
+                    }
+                }
+            }
+
+            // Poll CDC subscriber for aggregated totals
+            if let Some(ref sub) = h.totals_sub {
+                for _ in 0..64 {
+                    match sub.poll() {
+                        Some(rows) => {
+                            app.record_pipeline_count(
+                                p5_idx,
+                                "totals_out",
+                                rows.len() as u64,
+                            );
+                            app.record_cdc_totals(p5_idx, rows);
+                        }
+                        None => break,
+                    }
+                }
+            }
+
+            app.tick_throughput(p5_idx);
+
+            if app.phases[p5_idx].bars_received > 0 {
+                app.phases[p5_idx].status = PhaseStatus::Pass;
+            }
+        }
+
+        // Phase 6: push trades + poll HOP/SESSION/EMIT subscribers
+        if let Some(ref h) = p6_handles {
+            let trades = gen6.generate_trades(ts);
+            let count = trades.len() as u64;
+            h.source.push_batch(trades);
+            h.source.watermark(ts + 10_000);
+            app.record_push(p6_idx, count);
+            app.record_pipeline_count(p6_idx, "trades_in", count);
+
+            // Poll HOP results
+            if let Some(ref sub) = h.hop_sub {
+                for _ in 0..64 {
+                    match sub.poll() {
+                        Some(rows) => {
+                            app.record_pipeline_count(p6_idx, "hop_out", rows.len() as u64);
+                            app.record_hop(p6_idx, rows);
+                        }
+                        None => break,
+                    }
+                }
+            }
+
+            // Poll SESSION results
+            if let Some(ref sub) = h.session_sub {
+                for _ in 0..64 {
+                    match sub.poll() {
+                        Some(rows) => {
+                            app.record_pipeline_count(
+                                p6_idx,
+                                "session_out",
+                                rows.len() as u64,
+                            );
+                            app.record_session(p6_idx, rows);
+                        }
+                        None => break,
+                    }
+                }
+            }
+
+            // Poll EMIT ON UPDATE results
+            if let Some(ref sub) = h.emit_sub {
+                for _ in 0..64 {
+                    match sub.poll() {
+                        Some(rows) => {
+                            app.record_pipeline_count(p6_idx, "emit_out", rows.len() as u64);
+                            app.record_bars(p6_idx, rows);
+                        }
+                        None => break,
+                    }
+                }
+            }
+
+            app.tick_throughput(p6_idx);
+
+            if app.phases[p6_idx].bars_received > 0 {
+                app.phases[p6_idx].status = PhaseStatus::Pass;
+            }
+        }
     }
 
     // Restore terminal
@@ -562,6 +740,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let _ = h.db.shutdown().await;
     }
     if let Some(h) = p4_handles {
+        let _ = h.db.shutdown().await;
+    }
+    if let Some(h) = p5_handles {
+        let _ = h.db.shutdown().await;
+    }
+    if let Some(h) = p6_handles {
         let _ = h.db.shutdown().await;
     }
 
@@ -1063,6 +1247,164 @@ fn draw_pipeline_flow(f: &mut ratatui::Frame, app: &App, area: Rect) {
                     flow_arrow(cy, 3, join_act),
                     Span::styled(" poll()", dim),
                     pipeline_status(join),
+                ]),
+            ]
+        }
+        // Phase 5: CDC Pipeline — Postgres → CDC → SQL → subscriber
+        4 => {
+            let inserted = c.get("inserted").copied().unwrap_or(0);
+            let totals = c.get("totals_out").copied().unwrap_or(0);
+            let src_ok = inserted > 0;
+            let out_ok = totals > 0;
+            let pulse = vpulse(cy, src_ok);
+            vec![
+                Line::from(vec![
+                    Span::styled("  Postgres: ", dim),
+                    Span::styled(
+                        "orders table",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!(" [{}]", inserted),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled("  INSERT/UPDATE via tokio-postgres", dim),
+                ]),
+                Line::from(vec![
+                    Span::styled("    │", pulse),
+                    Span::styled(
+                        "  WAL → pgoutput → logical replication",
+                        dim,
+                    ),
+                ]),
+                Line::from(Span::styled("    ▼", pulse)),
+                Line::from(vec![
+                    Span::styled("  FROM POSTGRES_CDC: ", dim),
+                    Span::styled(
+                        "slot=laminar_orders",
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        ", pub=laminar_pub",
+                        dim,
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("    │", vpulse(cy, out_ok)),
+                    Span::styled(
+                        "  CDC Connector → envelope(_op, _after) → ctx.sql()",
+                        dim,
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("    ▼", vpulse(cy, out_ok)),
+                    Span::styled(
+                        "  SELECT COUNT(*), SUM(amount) GROUP BY customer_id",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("    │", vpulse(cy, out_ok)),
+                    flow_arrow(cy, 3, out_ok),
+                    Span::styled(" subscriber: ", dim),
+                    Span::styled(
+                        "customer_totals",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!(" [{}]", totals),
+                        Style::default().fg(Color::Green),
+                    ),
+                    Span::styled(" → poll()", dim),
+                    pipeline_status(totals),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(
+                        "  wal_level=logical, max_replication_slots=4, snapshot.mode=never",
+                        dim,
+                    ),
+                ]),
+            ]
+        }
+        // Phase 6: Bonus — HOP, SESSION, EMIT ON UPDATE from one source
+        5 => {
+            let t_in = c.get("trades_in").copied().unwrap_or(0);
+            let hop = c.get("hop_out").copied().unwrap_or(0);
+            let sess = c.get("session_out").copied().unwrap_or(0);
+            let emit = c.get("emit_out").copied().unwrap_or(0);
+            let _active = hop > 0 || sess > 0 || emit > 0;
+            let pulse = vpulse(cy, t_in > 0);
+            vec![
+                Line::from(vec![
+                    Span::styled("  Source: ", dim),
+                    Span::styled(
+                        "trades",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" [{}]", t_in), Style::default().fg(Color::Yellow)),
+                    Span::styled("  push_batch() + watermark(ts + 10000)", dim),
+                ]),
+                Line::from(Span::styled("    │", pulse)),
+                Line::from(vec![
+                    Span::styled("    ├", vpulse(cy, hop > 0)),
+                    flow_arrow(cy, 3, hop > 0),
+                    Span::styled(" HOP(2s slide, 10s size): ", bold_w),
+                    Span::styled(
+                        "hop_volume",
+                        Style::default()
+                            .fg(if hop > 0 { Color::Green } else { Color::Red })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" [{}]", hop), Style::default().fg(Color::Green)),
+                    pipeline_status(hop),
+                ]),
+                Line::from(vec![
+                    Span::styled("    │", dim),
+                ]),
+                Line::from(vec![
+                    Span::styled("    ├", vpulse(cy, sess > 0)),
+                    flow_arrow(cy + 1, 3, sess > 0),
+                    Span::styled(" SESSION(3s gap): ", bold_w),
+                    Span::styled(
+                        "session_burst",
+                        Style::default()
+                            .fg(if sess > 0 { Color::Green } else { Color::Red })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" [{}]", sess), Style::default().fg(Color::Green)),
+                    pipeline_status(sess),
+                ]),
+                Line::from(vec![
+                    Span::styled("    │", dim),
+                ]),
+                Line::from(vec![
+                    Span::styled("    └", vpulse(cy, emit > 0)),
+                    flow_arrow(cy + 2, 3, emit > 0),
+                    Span::styled(" TUMBLE(5s) EMIT ON UPDATE: ", bold_w),
+                    Span::styled(
+                        "ohlc_update",
+                        Style::default()
+                            .fg(if emit > 0 { Color::Green } else { Color::Red })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" [{}]", emit), Style::default().fg(Color::Green)),
+                    pipeline_status(emit),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(
+                        "  3 streams from 1 source — testing window types + emit modes",
+                        dim,
+                    ),
                 ]),
             ]
         }

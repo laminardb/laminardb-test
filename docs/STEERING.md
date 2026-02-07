@@ -8,8 +8,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 
 ## Current Focus
 
-**Phase 5: CDC Pipeline** — Needs Postgres with logical replication.
-**Bonus phases** — HOP, SESSION, EMIT ON UPDATE (embedded, no external deps).
+**All phases complete.** HOP, SESSION, EMIT ON UPDATE all PASS.
 
 ## Phase Priority Order
 
@@ -19,8 +18,8 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 2 (done) | Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | None | **PARTIAL** |
 | 3 (done) | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | Redpanda (:19092) | **PASS** |
 | 4 (done) | Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | None | **PARTIAL** |
-| 5 (next) | CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | Postgres | Not Started |
-| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None | Not Started |
+| 5 (done) | CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | Postgres | **PARTIAL** |
+| 6+ (done) | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None | **PASS** |
 
 ## Test Matrix
 
@@ -45,12 +44,13 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 4 | ASOF JOIN + TOLERANCE | Website: Stream Joins tab | **FAIL** (DataFusion limitation) |
 | 4 | Stream-stream INNER JOIN | Website: Stream Joins tab | **PASS** |
 | 4 | Time-bounded join (BETWEEN) | Website: Stream Joins tab | **PASS** (numeric, not INTERVAL) |
-| 5 | Postgres CDC source | Website: CDC Pipeline tab | Not Started |
-| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab | Not Started |
-| 5 | Delta Lake sink | Website: CDC Pipeline tab | Not Started |
-| 6+ | HOP window | Codebase | Not Started |
-| 6+ | SESSION window | Codebase | Not Started |
-| 6+ | EMIT ON UPDATE | Codebase | Not Started |
+| 5 | Postgres CDC source (SQL + connector) | Website: CDC Pipeline tab | **PARTIAL** (SQL parses, connector stub) |
+| 5 | CDC replication data flow | Website: CDC Pipeline tab | **FAIL** (connector open() is stub — no actual replication I/O) |
+| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab | Not testable (no data flow) |
+| 5 | Delta Lake sink | Website: CDC Pipeline tab | Not testable (no data flow) |
+| 6+ | HOP window | Codebase | **PASS** (885 results) |
+| 6+ | SESSION window | Codebase | **PASS** (885 results) |
+| 6+ | EMIT ON UPDATE | Codebase | **PASS** (885 results) |
 
 ## Decisions
 

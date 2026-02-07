@@ -25,6 +25,7 @@ src/
 ├── phase2_sql.rs    # Phase 2: Streaming SQL + cascading MVs (website tab 2)
 ├── phase3_kafka.rs  # Phase 3: Kafka source/sink pipeline (website tab 3)
 ├── phase4_joins.rs  # Phase 4: ASOF + stream-stream joins (website tab 4)
+├── phase5_cdc.rs    # Phase 5: CDC pipeline (website tab 5, needs Postgres)
 └── tui.rs           # Ratatui TUI with animated pipeline flow visualization
 docs/
 ├── CONTEXT.md       # Session continuity (where we left off)
@@ -90,5 +91,5 @@ Path deps to local laminardb (must be at `../laminardb/`):
 | 2 | Streaming SQL | tumble() as TUMBLE_START, SUM, cascading MVs | **PARTIAL** (L1 pass, cascade fail) |
 | 3 | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
 | 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PARTIAL** (INNER pass, ASOF fail) |
-| 5 | CDC Pipeline | POSTGRES_CDC, EMIT CHANGES, Delta Lake sink | Not Started |
-| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | Not Started |
+| 5 | CDC Pipeline | postgres-cdc SQL + connector registration | **PARTIAL** (SQL pass, replication stub) |
+| 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | **PASS** |

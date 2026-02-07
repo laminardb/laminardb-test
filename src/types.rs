@@ -96,6 +96,16 @@ pub struct TradeSummary {
     pub notional: f64,
 }
 
+// -- Phase 5: CDC pipeline output --
+
+/// Customer aggregated totals from CDC pipeline.
+#[derive(Debug, Clone, FromRow)]
+pub struct CustomerTotal {
+    pub customer_id: i32,
+    pub total_orders: i64,
+    pub total_spent: f64,
+}
+
 // -- Bonus: HOP / SESSION outputs --
 
 /// HOP window volume output.

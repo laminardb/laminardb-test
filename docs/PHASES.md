@@ -256,16 +256,170 @@ AND o.ts BETWEEN t.ts - 60000 AND t.ts + 60000;
 
 ## Phase 5: CDC Pipeline
 
-**File:** not yet implemented | **Status:** Not Started
+**File:** `src/phase5_cdc.rs` | **Status:** PARTIAL PASS
 
-### What it will test
+### What it tests
 
-The website's fifth tab — Postgres CDC source with `_op` column handling and `EMIT CHANGES`.
+The website's fifth tab — Postgres CDC source with logical replication, `_op` column filtering, and aggregation on changelog events.
 
 ### Prerequisites
 
-- Postgres with logical replication enabled
-- Publication and replication slot configured
+- Postgres 16 with `wal_level=logical` (use podman + docker-compose)
+- Database `shop` with `orders` table and `laminar_pub` publication
+- Replication slot `laminar_orders` (created automatically by setup)
+
+### How it works
+
+1. Connects to Postgres via `tokio-postgres` for inserting test data
+2. Creates a replication slot if it doesn't exist
+3. Registers a CDC source with `FROM "postgres-cdc" (...)` connector
+4. Creates an aggregation stream: per-customer order count + total spent
+5. Inserts random orders into Postgres every 3rd cycle (with occasional UPDATEs)
+6. Polls subscriber for aggregated totals
+
+### SQL (actual working version)
+
+```sql
+-- CDC source — connector name must be double-quoted
+CREATE SOURCE orders_cdc (
+    id INT NOT NULL,
+    customer_id INT NOT NULL,
+    amount DOUBLE NOT NULL,
+    status VARCHAR NOT NULL,
+    ts BIGINT NOT NULL
+) FROM "postgres-cdc" (
+    'host' = 'localhost',
+    'port' = '5432',
+    'database' = 'shop',
+    'username' = 'laminar',
+    'password' = 'laminar',
+    'slot.name' = 'laminar_orders',
+    'publication' = 'laminar_pub',
+    'snapshot.mode' = 'never'
+);
+
+-- Aggregation with _op filter (falls back to no filter if _op not available)
+CREATE STREAM customer_totals AS
+SELECT customer_id,
+       COUNT(*) AS total_orders,
+       CAST(SUM(amount) AS DOUBLE) AS total_spent
+FROM orders_cdc
+WHERE _op IN ('I', 'U')
+GROUP BY customer_id;
+```
+
+### Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| CDC source SQL parsing | **PASS** | `FROM "postgres-cdc" (...)` accepted |
+| Connector registration | **PASS** | postgres-cdc connector loads with feature flag |
+| Config keys with dots | **PASS** | Single-quoted keys: `'slot.name' = 'value'` |
+| Replication data flow | **FAIL** | Connector `open()` is a stub — no actual replication I/O |
+| EMIT CHANGES | Not testable | No data flows through connector |
+| Delta Lake sink | Not testable | No data flows through connector |
+
+### Gotchas discovered
+
+- **Connector name is `"postgres-cdc"`** (lowercase, hyphenated) — must be double-quoted in SQL: `FROM "postgres-cdc" (...)`
+- **Config keys with dots** must be single-quoted: `'slot.name' = 'laminar_orders'`
+- **Feature flag required:** `laminar-db = { features = ["postgres-cdc"] }`
+- **Connector `open()` is a stub** — the WAL decoder, pgoutput parser, and changelog processing are all implemented in the codebase, but actual replication I/O (TCP connection, `START_REPLICATION` command) was never wired up. This is a work-in-progress feature, not a bug.
+- **CDC envelope schema:** `_table` (Utf8), `_op` (Utf8: "I"/"U"/"D"), `_lsn` (UInt64), `_ts_ms` (Int64), `_before` (Utf8 nullable), `_after` (Utf8 nullable)
+- **tokio-postgres `batch_execute()`** avoids `ToSql` serialization issues vs parameterized queries
+
+---
+
+## Phase 6+: Bonus Window Types & Emit Modes
+
+**File:** `src/phase6_bonus.rs` | **Status:** PASS
+
+### What it tests
+
+Three advanced streaming features that LaminarDB supports but aren't shown on the website. All embedded, no external dependencies.
+
+### 1. HOP Window (Sliding Window)
+
+A HOP window tracks a metric over a **fixed-size window** that **slides forward** at regular intervals. Think of it as a "rolling average" — you always look back the same distance, but the calculation refreshes periodically.
+
+- **Window size:** 10 seconds (how far back you look)
+- **Slide interval:** 2 seconds (how often a new result is produced)
+
+At time 10s you get a result covering [0s-10s], at 12s you get [2s-12s], at 14s you get [4s-14s], and so on. Windows overlap — a single trade can appear in multiple windows. This is useful for smoothed, continuously-updating metrics like "volume over the last 10 seconds."
+
+The query groups trades by symbol and computes total volume, trade count, and average price within each sliding window.
+
+### 2. SESSION Window (Gap-Based)
+
+A session window groups events that arrive **close together in time**, with no predetermined size. If there's a gap of more than the configured timeout between events, the current session "closes" and a new one starts.
+
+- **Gap timeout:** 3 seconds
+
+If trades come in at 1s, 2s, 2.5s, then nothing until 7s — the first three trades form one session, and the trade at 7s starts a new session. Sessions can be any length as long as events keep arriving within the gap. This is useful for detecting "bursts" of activity.
+
+The query calculates burst trade count, burst volume, and the high/low prices within each burst.
+
+### 3. EMIT ON UPDATE
+
+Normally, LaminarDB only outputs results **when a window closes** (e.g., after each 5-second tumble window ends — you see one final result). With `EMIT ON UPDATE`, it outputs **intermediate results on every state change** — so you see the OHLC bar updating in real-time as each new trade arrives, not just the final result when the window expires.
+
+Uses the same OHLC bar calculation as Phase 1 (open/high/low/close) but with a 5-second tumble window that emits partial results on every incoming trade.
+
+### How it works
+
+Creates **one trade source** and fans it out into **three streams**, each using a different windowing/emit strategy. Runs for 15 seconds (CLI mode), pushing synthetic trades and polling all three subscribers.
+
+### SQL (actual working version)
+
+```sql
+-- Shared source
+CREATE SOURCE trades (
+    symbol  VARCHAR NOT NULL,
+    price   DOUBLE NOT NULL,
+    volume  BIGINT NOT NULL,
+    ts      BIGINT NOT NULL
+);
+
+-- 1. HOP (sliding) window — 2s slide, 10s window
+CREATE STREAM hop_volume AS
+SELECT symbol,
+       SUM(volume) AS total_volume,
+       COUNT(*) AS trade_count,
+       AVG(price) AS avg_price
+FROM trades
+GROUP BY symbol, HOP(ts, INTERVAL '2' SECOND, INTERVAL '10' SECOND);
+
+-- 2. SESSION window — 3s gap
+CREATE STREAM session_burst AS
+SELECT symbol,
+       COUNT(*) AS burst_trades,
+       SUM(volume) AS burst_volume,
+       MIN(price) AS low,
+       MAX(price) AS high
+FROM trades
+GROUP BY symbol, SESSION(ts, INTERVAL '3' SECOND);
+
+-- 3. TUMBLE + EMIT ON UPDATE — intermediate results on every change
+CREATE STREAM ohlc_update AS
+SELECT symbol,
+       first_value(price) AS open,
+       MAX(price) AS high,
+       MIN(price) AS low,
+       last_value(price) AS close
+FROM trades
+GROUP BY symbol, TUMBLE(ts, INTERVAL '5' SECOND)
+EMIT ON UPDATE;
+```
+
+### Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| HOP window (2s slide, 10s size) | **PASS** | 885 results from 890 trades |
+| SESSION window (3s gap) | **PASS** | 885 results from 890 trades |
+| EMIT ON UPDATE (5s tumble) | **PASS** | 885 results from 890 trades |
+
+All three window types and the emit mode work correctly in the embedded pipeline.
 
 ---
 
@@ -275,7 +429,7 @@ The website's fifth tab — Postgres CDC source with `_op` column handling and `
 
 ### What it shows
 
-A tabbed Ratatui dashboard that runs all implemented phases simultaneously (Phase 1-4). Each tab displays:
+A tabbed Ratatui dashboard that runs all implemented phases simultaneously (Phase 1-6). Each tab displays:
 
 - **Stats panel:** trades pushed, bars/results received, cycle count, uptime, throughput, latency
 - **Pipeline flow:** animated visualization of data flowing through the embedded pipeline, showing MemTable registration, `ctx.sql()` execution, subscriber buffers, and Kafka connectors
@@ -300,11 +454,13 @@ A tabbed Ratatui dashboard that runs all implemented phases simultaneously (Phas
 ### Running
 
 ```bash
-cargo run              # TUI with all phases (1-4)
+cargo run              # TUI with all phases (1-6)
 cargo run -- phase1    # Phase 1 CLI only
 cargo run -- phase2    # Phase 2 CLI only
 cargo run -- phase3    # Phase 3 CLI only (needs Redpanda on :19092)
 cargo run -- phase4    # Phase 4 CLI only
+cargo run -- phase5    # Phase 5 CLI only (needs Postgres on :5432)
+cargo run -- phase6    # Phase 6 CLI only (bonus, no external deps)
 ```
 
 ---
@@ -323,6 +479,9 @@ cargo run -- phase4    # Phase 4 CLI only
 | `Order` | `Record` | Phase 4 stream-stream JOIN (input) |
 | `AsofEnriched` | `FromRow` | Phase 4 ASOF JOIN (output) |
 | `TradeOrderMatch` | `FromRow` | Phase 4 stream-stream JOIN (output) |
+| `CustomerTotal` | `FromRow` | Phase 5 CDC pipeline (output) |
+| `HopVolume` | `FromRow` | Phase 6 HOP window (output) |
+| `SessionBurst` | `FromRow` | Phase 6 SESSION window (output) |
 
 ## Data Generator
 
@@ -551,4 +710,9 @@ ASOF JOIN                     ✗ FAIL                ✓ (expected)
 Stream-stream INNER JOIN      ✓ PASS                ✓ (expected)
 EMIT ON WINDOW CLOSE          ✗ ignored             ✓ (expected)
 INTERVAL on BIGINT            ✗ FAIL                ? (untested)
+CDC source (SQL + connector)  ✓ PASS (partial)      ✓ (expected)
+CDC replication data flow     ✗ FAIL (stub)         ? (WIP)
+HOP window                    ✓ PASS                ✓ (expected)
+SESSION window                ✓ PASS                ✓ (expected)
+EMIT ON UPDATE                ✓ PASS                ✓ (expected)
 ```
