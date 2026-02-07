@@ -24,11 +24,8 @@ jobs:
       - name: Checkout laminardb-test
         uses: actions/checkout@v4
 
-      - name: Checkout laminardb (sibling directory for path deps)
-        uses: actions/checkout@v4
-        with:
-          repository: laminardb/laminardb
-          path: ../laminardb
+      - name: Clone laminardb (sibling directory for path deps)
+        run: git clone --depth 1 https://github.com/laminardb/laminardb.git ../laminardb
 
       # ── Setup ─────────────────────────────────────────────────
       - name: Install Rust stable
