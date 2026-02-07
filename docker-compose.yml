@@ -1,6 +1,6 @@
 services:
   redpanda:
-    image: redpandadata/redpanda:v24.1.1
+    image: redpandadata/redpanda:v24.1.21
     container_name: laminar-redpanda
     command:
       - redpanda

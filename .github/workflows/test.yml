@@ -57,11 +57,14 @@ jobs:
             postgres:16 \
             postgres -c wal_level=logical -c max_replication_slots=4 -c max_wal_senders=4
 
+      - name: Pull Redpanda image
+        run: docker pull redpandadata/redpanda:v24.1.21
+
       - name: Start Redpanda
         run: |
           docker run -d --name redpanda \
             -p 19092:19092 -p 18082:18082 -p 9644:9644 \
-            redpandadata/redpanda:v24.1.1 \
+            redpandadata/redpanda:v24.1.21 \
             redpanda start \
             --smp=1 --memory=512M --overprovisioned \
             --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092 \
