@@ -187,10 +187,16 @@ jobs:
       # ── Results Summary ───────────────────────────────────────
       - name: Generate Job Summary
         if: always()
+        env:
+          P1_OUT: ${{ steps.phase1.outputs.output }}
+          P2_OUT: ${{ steps.phase2.outputs.output }}
+          P3_OUT: ${{ steps.phase3.outputs.output }}
+          P4_OUT: ${{ steps.phase4.outputs.output }}
+          P5_OUT: ${{ steps.phase5.outputs.output }}
+          P6_OUT: ${{ steps.phase6.outputs.output }}
         run: |
           extract_status() {
             local output="$1"
-            local phase="$2"
             if echo "$output" | grep -q "PASS"; then
               if echo "$output" | grep -q "FAIL\|SKIP"; then
                 echo "PARTIAL"
@@ -204,18 +210,12 @@ jobs:
             fi
           }
 
-          extract_line() {
-            local output="$1"
-            local pattern="$2"
-            echo "$output" | grep "$pattern" | head -1 | sed 's/^[[:space:]]*//'
-          }
-
-          P1_STATUS=$(extract_status "${{ steps.phase1.outputs.output }}" "1")
-          P2_STATUS=$(extract_status "${{ steps.phase2.outputs.output }}" "2")
-          P3_STATUS=$(extract_status "${{ steps.phase3.outputs.output }}" "3")
-          P4_STATUS=$(extract_status "${{ steps.phase4.outputs.output }}" "4")
-          P5_STATUS=$(extract_status "${{ steps.phase5.outputs.output }}" "5")
-          P6_STATUS=$(extract_status "${{ steps.phase6.outputs.output }}" "6")
+          P1_STATUS=$(extract_status "$P1_OUT")
+          P2_STATUS=$(extract_status "$P2_OUT")
+          P3_STATUS=$(extract_status "$P3_OUT")
+          P4_STATUS=$(extract_status "$P4_OUT")
+          P5_STATUS=$(extract_status "$P5_OUT")
+          P6_STATUS=$(extract_status "$P6_OUT")
 
           STATUS_EMOJI() {
             case "$1" in
@@ -227,7 +227,7 @@ jobs:
           }
 
           cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
-          ## 🧪 laminardb-test Results
+          ## laminardb-test Results
 
           | Phase | Description | Status | Details |
           |-------|-------------|--------|---------|
@@ -244,19 +244,18 @@ jobs:
           echo "### Phase Output" >> $GITHUB_STEP_SUMMARY
 
           for PHASE in 1 2 3 4 5 6; do
-            STEP_ID="phase${PHASE}"
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "<details>" >> $GITHUB_STEP_SUMMARY
             echo "<summary>Phase ${PHASE} output</summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             case $PHASE in
-              1) echo "${{ steps.phase1.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
-              2) echo "${{ steps.phase2.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
-              3) echo "${{ steps.phase3.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
-              4) echo "${{ steps.phase4.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
-              5) echo "${{ steps.phase5.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
-              6) echo "${{ steps.phase6.outputs.output }}" >> $GITHUB_STEP_SUMMARY ;;
+              1) echo "$P1_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              2) echo "$P2_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              3) echo "$P3_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              4) echo "$P4_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              5) echo "$P5_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              6) echo "$P6_OUT" >> $GITHUB_STEP_SUMMARY ;;
             esac
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
@@ -267,13 +266,13 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          P2_OUTPUT: ${{ steps.phase2.outputs.output }}
         run: |
-          P2_OUTPUT="${{ steps.phase2.outputs.output }}"
           CASCADE_BARS=$(echo "$P2_OUTPUT" | grep -oP 'Level 2 \(cascade\) bars:\s+\K\d+' || echo "0")
           if [ "$CASCADE_BARS" -gt 0 ] 2>/dev/null; then
-            echo "🎉 Issue #35: Cascading MVs now producing $CASCADE_BARS bars!"
+            echo "Issue #35: Cascading MVs now producing $CASCADE_BARS bars!"
             gh issue comment 35 --repo laminardb/laminardb --body \
-              "🤖 **CI detected**: Cascading MVs now producing **$CASCADE_BARS bars** in laminardb-test Phase 2. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
+              "CI detected: Cascading MVs now producing **$CASCADE_BARS bars** in laminardb-test Phase 2. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
           else
             echo "Issue #35: Cascading MVs still not producing output (cascade_bars=$CASCADE_BARS)"
           fi
@@ -282,13 +281,13 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          P4_OUTPUT: ${{ steps.phase4.outputs.output }}
         run: |
-          P4_OUTPUT="${{ steps.phase4.outputs.output }}"
           ASOF_RESULTS=$(echo "$P4_OUTPUT" | grep -oP 'ASOF results:\s+\K\d+' || echo "0")
           if [ "$ASOF_RESULTS" -gt 0 ] 2>/dev/null; then
-            echo "🎉 Issue #37: ASOF JOIN now producing $ASOF_RESULTS results!"
+            echo "Issue #37: ASOF JOIN now producing $ASOF_RESULTS results!"
             gh issue comment 37 --repo laminardb/laminardb --body \
-              "🤖 **CI detected**: ASOF JOIN now producing **$ASOF_RESULTS results** in laminardb-test Phase 4. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
+              "CI detected: ASOF JOIN now producing **$ASOF_RESULTS results** in laminardb-test Phase 4. This issue may be fixed. Run: \`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\`"
           else
             echo "Issue #37: ASOF JOIN still not producing output (asof_results=$ASOF_RESULTS)"
           fi
