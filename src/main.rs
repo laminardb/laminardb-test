@@ -1,31 +1,36 @@
 //! LaminarDB Test App — tests each pipeline type from laminardb.io code examples.
 //!
 //! Usage:
-//!   cargo run -- phase1    # Rust API basics
+//!   cargo run              # TUI dashboard (live streaming)
+//!   cargo run -- phase1    # Rust API basics (CLI mode)
 //!   cargo run -- phase2    # Streaming SQL + cascading MVs
 //!   cargo run -- phase3    # Kafka pipeline (needs Redpanda)
 //!   cargo run -- phase4    # Stream joins (ASOF + stream-stream)
 //!   cargo run -- phase5    # CDC pipeline (needs Postgres)
-//!   cargo run              # Run all phases sequentially
 
 mod generator;
 mod phase1_api;
+mod phase2_sql;
+mod phase3_kafka;
+mod phase4_joins;
+mod tui;
 mod types;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let phase = args.get(1).map(|s| s.as_str()).unwrap_or("phase1");
+    let phase = args.get(1).map(|s| s.as_str());
 
     match phase {
-        "phase1" => phase1_api::run().await?,
-        // "phase2" => phase2_sql::run().await?,
-        // "phase3" => phase3_kafka::run().await?,
-        // "phase4" => phase4_joins::run().await?,
-        // "phase5" => phase5_cdc::run().await?,
-        other => {
+        None | Some("tui") => tui::run().await?,
+        Some("phase1") => phase1_api::run().await?,
+        Some("phase2") => phase2_sql::run().await?,
+        Some("phase3") => phase3_kafka::run().await?,
+        Some("phase4") => phase4_joins::run().await?,
+        // Some("phase5") => phase5_cdc::run().await?,
+        Some(other) => {
             eprintln!("Unknown phase: {}", other);
-            eprintln!("Available: phase1, phase2, phase3, phase4, phase5");
+            eprintln!("Available: (no args for TUI), phase1, phase2, phase3, phase4, phase5");
             std::process::exit(1);
         }
     }

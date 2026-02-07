@@ -11,8 +11,9 @@ path = "src/main.rs"
 
 [dependencies]
 # LaminarDB (path deps to local checkout)
-laminar-db = { path = "../laminardb/crates/laminar-db" }
+laminar-db = { path = "../laminardb/crates/laminar-db", features = ["kafka"] }
 laminar-derive = { path = "../laminardb/crates/laminar-derive" }
+laminar-core = { path = "../laminardb/crates/laminar-core" }
 
 # Arrow (match laminardb workspace versions)
 arrow = { version = "57.2", default-features = true }
@@ -21,6 +22,10 @@ arrow-schema = "57.2"
 
 # Async
 tokio = { version = "1.49", features = ["full"] }
+
+# Kafka (direct dep for producer/consumer in Phase 3)
+rdkafka = { version = "0.39", features = ["cmake-build"] }
+serde_json = "1"
 
 # Utilities
 chrono = "0.4"

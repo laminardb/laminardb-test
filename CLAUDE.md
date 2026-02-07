@@ -66,19 +66,20 @@ while let Some(bars) = sub.poll() { ... }
 ## Derive Macros
 
 - `#[derive(Record)]` — input structs pushed into sources. Mark event time with `#[event_time]`
-- `#[derive(FromRecordBatch)]` — output structs read from subscriptions
+- `#[derive(FromRow)]` — output structs read from subscriptions. Implements `laminar_db::FromBatch` trait needed by `db.subscribe()`. (Website says `FromRecordBatch` but that only generates inherent methods, not the trait impl)
 
 ## Dependencies
 
 Path deps to local laminardb (must be at `../laminardb/`):
 - `laminar-db` — main database crate
-- `laminar-derive` — Record/FromRecordBatch macros
+- `laminar-derive` — Record/FromRow macros
+- `laminar-core` — required by Record derive macro at compile time
 
 ## Supported Stream Types Being Tested
 
 | Phase | Type | SQL | Status |
 |-------|------|-----|--------|
-| 1 | Rust API | TUMBLE + FIRST/LAST | Pending |
+| 1 | Rust API | TUMBLE + FIRST/LAST | Compiles |
 | 2 | Streaming SQL | TUMBLE_START, cascading MVs, EMIT ON WINDOW CLOSE | Pending |
 | 3 | Kafka Pipeline | FROM KAFKA / TO KAFKA, exactly-once | Pending |
 | 4 | Stream Joins | ASOF JOIN + TOLERANCE, INNER JOIN + BETWEEN | Pending |

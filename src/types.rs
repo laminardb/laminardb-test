@@ -1,14 +1,14 @@
 //! Typed structs for input events and output results.
 //!
 //! Input types use `#[derive(Record)]` for pushing into sources.
-//! Output types use `#[derive(FromRecordBatch)]` for reading from subscriptions.
+//! Output types use `#[derive(FromRow)]` for reading from subscriptions.
 
-use laminar_derive::{FromRecordBatch, Record};
+use laminar_derive::{FromRow, Record};
 
 // -- Phase 1 & 2: Trade source + OHLC output --
 
 /// A market trade event (pushed into the `trades` source).
-#[derive(Debug, Clone, Record, FromRecordBatch)]
+#[derive(Debug, Clone, Record, FromRow)]
 pub struct Trade {
     pub symbol: String,
     pub price: f64,
@@ -18,7 +18,7 @@ pub struct Trade {
 }
 
 /// OHLC bar output from Phase 1 (simple, no TUMBLE_START).
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct OhlcBar {
     pub symbol: String,
     pub open: f64,
@@ -28,7 +28,7 @@ pub struct OhlcBar {
 }
 
 /// OHLC bar with bar_start from Phase 2 (TUMBLE_START + SUM volume).
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct OhlcBarFull {
     pub symbol: String,
     pub bar_start: i64,
@@ -64,7 +64,7 @@ pub struct Order {
 }
 
 /// ASOF join output: trade enriched with latest quote.
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct AsofEnriched {
     pub symbol: String,
     pub trade_price: f64,
@@ -75,7 +75,7 @@ pub struct AsofEnriched {
 }
 
 /// Stream-stream join output: trade matched with order.
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct TradeOrderMatch {
     pub symbol: String,
     pub trade_price: f64,
@@ -89,7 +89,7 @@ pub struct TradeOrderMatch {
 // -- Phase 3: Kafka pipeline output --
 
 /// Trade summary output from Kafka pipeline.
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct TradeSummary {
     pub symbol: String,
     pub trades: i64,
@@ -99,7 +99,7 @@ pub struct TradeSummary {
 // -- Bonus: HOP / SESSION outputs --
 
 /// HOP window volume output.
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct HopVolume {
     pub symbol: String,
     pub total_volume: i64,
@@ -108,7 +108,7 @@ pub struct HopVolume {
 }
 
 /// SESSION window burst output.
-#[derive(Debug, Clone, FromRecordBatch)]
+#[derive(Debug, Clone, FromRow)]
 pub struct SessionBurst {
     pub symbol: String,
     pub burst_trades: i64,
