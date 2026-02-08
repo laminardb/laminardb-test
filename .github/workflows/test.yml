@@ -202,9 +202,9 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       # ── Criterion Benchmarks ────────────────────────────────
-      - name: "Benchmark: Criterion throughput (push_cycle)"
+      - name: "Benchmark: Criterion throughput"
         id: bench
-        timeout-minutes: 10
+        timeout-minutes: 30
         run: |
           cargo bench 2>&1 | tee bench_output.txt
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -217,7 +217,7 @@ jobs:
           echo "## Criterion Benchmarks" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Only include benchmark result lines to stay under step summary size limit
-          grep -E '(^Benchmarking|^pipeline_setup|^push_cycle|time:)' bench_output.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "(no output)" >> $GITHUB_STEP_SUMMARY
+          grep -E '(^Benchmarking|^pipeline_setup|^push_throughput|^end_to_end|time:)' bench_output.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "(no output)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       # ── Results Summary ───────────────────────────────────────
