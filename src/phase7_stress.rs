@@ -32,13 +32,13 @@ const SYMBOLS: &[(&str, f64)] = &[
 ];
 const NORMAL_ACCOUNTS: &[&str] = &["ACCT-001", "ACCT-002", "ACCT-003", "ACCT-004", "ACCT-005"];
 
-struct StressLevel {
-    trades_per_cycle: usize,
-    sleep_ms: u64,
-    target_tps: u64,
+pub struct StressLevel {
+    pub trades_per_cycle: usize,
+    pub sleep_ms: u64,
+    pub target_tps: u64,
 }
 
-const LEVELS: &[StressLevel] = &[
+pub const LEVELS: &[StressLevel] = &[
     StressLevel { trades_per_cycle: 10,   sleep_ms: 100, target_tps: 100 },
     StressLevel { trades_per_cycle: 25,   sleep_ms: 100, target_tps: 250 },
     StressLevel { trades_per_cycle: 50,   sleep_ms: 50,  target_tps: 1_000 },
@@ -48,7 +48,7 @@ const LEVELS: &[StressLevel] = &[
     StressLevel { trades_per_cycle: 1000, sleep_ms: 5,   target_tps: 200_000 },
 ];
 
-const STREAM_NAMES: [&str; 6] = [
+pub const STREAM_NAMES: [&str; 6] = [
     "vol_baseline",
     "ohlc_vol",
     "rapid_fire",
@@ -59,14 +59,14 @@ const STREAM_NAMES: [&str; 6] = [
 
 // ── Data Generator ──
 
-struct FraudGenerator {
+pub struct FraudGenerator {
     prices: HashMap<String, f64>,
     order_seq: u64,
     trade_seq: u64,
 }
 
 impl FraudGenerator {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut prices = HashMap::new();
         for (sym, base) in SYMBOLS {
             prices.insert(sym.to_string(), *base);
@@ -78,17 +78,17 @@ impl FraudGenerator {
         }
     }
 
-    fn now_ms() -> i64 {
+    pub fn now_ms() -> i64 {
         chrono::Utc::now().timestamp_millis()
     }
 
     /// Event-time span of a stress cycle (constant 50ms step).
-    fn stress_cycle_span_ms(count: usize) -> i64 {
+    pub fn stress_cycle_span_ms(count: usize) -> i64 {
         count as i64 * 50
     }
 
     /// Generate one cycle of trades + orders with constant 50ms timestamp spacing.
-    fn generate_stress_cycle(
+    pub fn generate_stress_cycle(
         &mut self,
         base_ts: i64,
         count: usize,
@@ -141,21 +141,21 @@ impl FraudGenerator {
 
 // ── Pipeline Setup ──
 
-struct DetectionPipeline {
+pub struct DetectionPipeline {
     #[allow(dead_code)]
-    db: LaminarDB,
-    trade_source: laminar_db::SourceHandle<StressTrade>,
-    order_source: laminar_db::SourceHandle<StressOrder>,
-    vol_baseline_sub: Option<laminar_db::TypedSubscription<VolumeBaseline>>,
-    ohlc_vol_sub: Option<laminar_db::TypedSubscription<OhlcVolatility>>,
-    rapid_fire_sub: Option<laminar_db::TypedSubscription<RapidFireBurst>>,
-    wash_score_sub: Option<laminar_db::TypedSubscription<WashScore>>,
-    suspicious_match_sub: Option<laminar_db::TypedSubscription<SuspiciousMatch>>,
-    asof_match_sub: Option<laminar_db::TypedSubscription<AsofMatch>>,
-    streams_created: Vec<(String, bool)>,
+    pub db: LaminarDB,
+    pub trade_source: laminar_db::SourceHandle<StressTrade>,
+    pub order_source: laminar_db::SourceHandle<StressOrder>,
+    pub vol_baseline_sub: Option<laminar_db::TypedSubscription<VolumeBaseline>>,
+    pub ohlc_vol_sub: Option<laminar_db::TypedSubscription<OhlcVolatility>>,
+    pub rapid_fire_sub: Option<laminar_db::TypedSubscription<RapidFireBurst>>,
+    pub wash_score_sub: Option<laminar_db::TypedSubscription<WashScore>>,
+    pub suspicious_match_sub: Option<laminar_db::TypedSubscription<SuspiciousMatch>>,
+    pub asof_match_sub: Option<laminar_db::TypedSubscription<AsofMatch>>,
+    pub streams_created: Vec<(String, bool)>,
 }
 
-async fn try_create(db: &LaminarDB, name: &str, sql: &str) -> bool {
+pub async fn try_create(db: &LaminarDB, name: &str, sql: &str) -> bool {
     match db.execute(sql).await {
         Ok(_) => {
             eprintln!("  [OK] {} created", name);
@@ -168,7 +168,7 @@ async fn try_create(db: &LaminarDB, name: &str, sql: &str) -> bool {
     }
 }
 
-async fn setup_pipeline() -> Result<DetectionPipeline, Box<dyn std::error::Error>> {
+pub async fn setup_pipeline() -> Result<DetectionPipeline, Box<dyn std::error::Error>> {
     let db = LaminarDB::builder().buffer_size(65536).build().await?;
 
     // ── Sources ──
@@ -358,7 +358,7 @@ async fn setup_pipeline() -> Result<DetectionPipeline, Box<dyn std::error::Error
 
 // ── Latency helpers ──
 
-fn format_latency(us: u64) -> String {
+pub fn format_latency(us: u64) -> String {
     if us < 1_000 {
         format!("{}us", us)
     } else if us < 1_000_000 {
@@ -370,16 +370,16 @@ fn format_latency(us: u64) -> String {
 
 // ── Stress Test Runner ──
 
-struct LevelResult {
-    level_num: usize,
-    target_tps: u64,
-    actual_tps: u64,
-    push_p50: u64,
-    push_p99: u64,
-    total_trades: u64,
-    total_orders: u64,
-    stream_counts: [u64; 6],
-    elapsed_secs: f64,
+pub struct LevelResult {
+    pub level_num: usize,
+    pub target_tps: u64,
+    pub actual_tps: u64,
+    pub push_p50: u64,
+    pub push_p99: u64,
+    pub total_trades: u64,
+    pub total_orders: u64,
+    pub stream_counts: [u64; 6],
+    pub elapsed_secs: f64,
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {

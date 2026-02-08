@@ -37,3 +37,10 @@ rand = "0.8"
 # TUI
 ratatui = { version = "0.29", features = ["all-widgets"] }
 crossterm = "0.28"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "throughput"
+harness = false
