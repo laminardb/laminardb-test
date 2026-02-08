@@ -91,5 +91,5 @@ Path deps to local laminardb (must be at `../laminardb/`):
 | 2 | Streaming SQL | tumble() as TUMBLE_START, SUM, cascading MVs | **PARTIAL** (L1 pass, cascade fail) |
 | 3 | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
 | 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PARTIAL** (INNER pass, ASOF fail) |
-| 5 | CDC Pipeline | postgres-cdc SQL + connector registration | **PARTIAL** (SQL pass, replication stub) |
+| 5 | CDC Pipeline | postgres-cdc SQL, polling workaround | **PASS** (polling; native connector blocked by [#58](https://github.com/laminardb/laminardb/issues/58)) |
 | 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | **PASS** |

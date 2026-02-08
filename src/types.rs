@@ -96,7 +96,19 @@ pub struct TradeSummary {
     pub notional: f64,
 }
 
-// -- Phase 5: CDC pipeline output --
+// -- Phase 5: CDC pipeline input + output --
+
+/// An order captured from Postgres CDC (pushed into the in-memory source
+/// when using the polling workaround via `pg_logical_slot_get_changes`).
+#[derive(Debug, Clone, Record)]
+pub struct CdcOrder {
+    pub id: i32,
+    pub customer_id: i32,
+    pub amount: f64,
+    pub status: String,
+    #[event_time]
+    pub ts: i64,
+}
 
 /// Customer aggregated totals from CDC pipeline.
 #[derive(Debug, Clone, FromRow)]

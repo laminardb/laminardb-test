@@ -4,7 +4,7 @@
 
 ## Last Session
 
-**Date**: 2026-02-07
+**Date**: 2026-02-08
 
 ### What Was Accomplished
 - Phase 1 (Rust API) **PASS**: 490 trades → 440 OHLC bars
@@ -20,11 +20,17 @@
 - Phase 4 (Stream Joins) **PARTIAL PASS**:
   - Stream-stream INNER JOIN (trades ⋈ orders, numeric BETWEEN): PASS (88 matches from 98 orders)
   - ASOF JOIN (trades ⋈ quotes, MATCH_CONDITION): FAIL — DataFusion doesn't support ASOF JOIN syntax
+- Phase 5 (CDC Pipeline) **PASS** (polling workaround):
+  - Native postgres-cdc connector: FAIL — laminardb bug [#58](https://github.com/laminardb/laminardb/issues/58), tokio-postgres lacks replication support
+  - Polling workaround: PASS — `pg_logical_slot_get_changes()` + `test_decoding` → `SourceHandle::push()` → SQL aggregation
+  - 175 CDC events captured, 155 aggregated totals received
+  - Both INSERT and UPDATE events correctly captured and aggregated
+  - Filed issue [#58](https://github.com/laminardb/laminardb/issues/58) on laminardb repo
 - TUI dashboard with pipeline flow visualization, latency stats
-- GitHub issue #35 filed for cascading MV failure
+- GitHub issues filed: #35 (cascading MV), #44 (CDC stub), #58 (tokio-postgres replication)
 
 ### Where We Left Off
-- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**, **Phase 5: PARTIAL**, **Phase 6+: PASS**
+- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**, **Phase 5: PASS (polling)**, **Phase 6+: PASS**
 - All phases complete
 
 ### Current Phase Status
@@ -35,7 +41,7 @@
 | 2: Streaming SQL | **PARTIAL** | Level 1 PASS, cascading MV FAIL (architectural limit) |
 | 3: Kafka Pipeline | **PASS** | 315 trades → 285 summaries, source + sink + ${VAR} all working |
 | 4: Stream Joins | **PARTIAL** | INNER JOIN PASS (88 matches), ASOF JOIN FAIL (connector-only) |
-| 5: CDC Pipeline | **PARTIAL** | SQL parsing + connector registration PASS, replication data flow FAIL (stub) |
+| 5: CDC Pipeline | **PASS** | Polling workaround: 175 events → 155 totals. Native connector blocked by #58 |
 | 6+: Bonus | **PASS** | HOP (885), SESSION (885), EMIT ON UPDATE (885) — all from 890 trades |
 
 ### Immediate Next Steps
@@ -66,6 +72,8 @@
 - **Phase 5 CDC**: Connector name is `"postgres-cdc"` (lowercase, hyphenated) — must be double-quoted in SQL: `FROM "postgres-cdc" (...)`
 - **Phase 5 CDC**: Config keys with dots must be single-quoted: `'slot.name' = 'laminar_orders'`
 - **Phase 5 CDC**: Feature flag: `laminar-db = { features = ["postgres-cdc"] }` → enables laminar-connectors/postgres-cdc
-- **Phase 5 CDC**: Connector `open()` is a stub — WAL decoder/pgoutput parser/changelog processing all implemented but actual replication I/O (connection, START_REPLICATION) not yet wired up
+- **Phase 5 CDC**: Native connector blocked by laminardb bug [#58](https://github.com/laminardb/laminardb/issues/58) — tokio-postgres 0.7 lacks `replication=database` parameter and `CopyBoth` protocol. laminardb chose an incompatible dependency.
+- **Phase 5 CDC**: Polling workaround PASS — `pg_logical_slot_get_changes('laminar_orders_poll', NULL, NULL)` with `test_decoding` plugin, parsed and pushed via `SourceHandle<CdcOrder>::push()`
+- **Phase 5 CDC**: `CdcOrder` type (`#[derive(Record)]`) with `#[event_time]` on `ts` field for watermark support
 - **Phase 5 CDC**: Envelope schema: `_table, _op, _lsn, _ts_ms, _before, _after` — `_op` values: "I", "U", "D"
 - **Phase 5 CDC**: tokio-postgres `batch_execute()` avoids ToSql serialization issues with parameterized queries

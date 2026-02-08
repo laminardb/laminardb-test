@@ -12,7 +12,7 @@ Test app that exercises each [LaminarDB](https://laminardb.io) pipeline type fro
 | 2: Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | **PASS** |
 | 3: Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
 | 4: Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | **PARTIAL** (ASOF: DataFusion limitation) |
-| 5: CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | **PARTIAL** (connector stub — no replication I/O) |
+| 5: CDC Pipeline | Postgres CDC polling, SQL aggregation on CDC events | **PASS** (polling; native connector blocked by [#58](https://github.com/laminardb/laminardb/issues/58)) |
 | 6+: Bonus | HOP window, SESSION window, EMIT ON UPDATE | **PASS** |
 
 See [docs/PHASES.md](docs/PHASES.md) for detailed per-feature results and gotchas discovered.

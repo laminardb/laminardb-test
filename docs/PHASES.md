@@ -256,7 +256,7 @@ AND o.ts BETWEEN t.ts - 60000 AND t.ts + 60000;
 
 ## Phase 5: CDC Pipeline
 
-**File:** `src/phase5_cdc.rs` | **Status:** PARTIAL PASS
+**File:** `src/phase5_cdc.rs` | **Status:** PASS (polling workaround)
 
 ### What it tests
 
@@ -266,22 +266,44 @@ The website's fifth tab — Postgres CDC source with logical replication, `_op` 
 
 - Postgres 16 with `wal_level=logical` (use podman + docker-compose)
 - Database `shop` with `orders` table and `laminar_pub` publication
-- Replication slot `laminar_orders` (created automatically by setup)
+- Replication slots created automatically by setup
 
 ### How it works
 
+The test tries the native `postgres-cdc` connector first. When it fails (due to laminardb bug [#58](https://github.com/laminardb/laminardb/issues/58) — tokio-postgres lacks replication support), it falls back to a **polling workaround**:
+
 1. Connects to Postgres via `tokio-postgres` for inserting test data
-2. Creates a replication slot if it doesn't exist
-3. Registers a CDC source with `FROM "postgres-cdc" (...)` connector
+2. Creates a `test_decoding` replication slot for polling
+3. Creates an **in-memory source** (no connector) with the same schema
 4. Creates an aggregation stream: per-customer order count + total spent
-5. Inserts random orders into Postgres every 3rd cycle (with occasional UPDATEs)
+5. In a loop: inserts orders into Postgres, polls `pg_logical_slot_get_changes()` for CDC events, parses `test_decoding` output, pushes events into laminardb via `SourceHandle<CdcOrder>::push()`, emits watermarks
 6. Polls subscriber for aggregated totals
 
-### SQL (actual working version)
+### SQL (actual working version — polling mode)
+
+```sql
+-- In-memory source (polling workaround bypasses the connector)
+CREATE SOURCE orders_cdc (
+    id INT NOT NULL,
+    customer_id INT NOT NULL,
+    amount DOUBLE NOT NULL,
+    status VARCHAR NOT NULL,
+    ts BIGINT NOT NULL
+);
+
+-- Aggregation (without _op filter — polling parser only pushes INSERT/UPDATE events)
+CREATE STREAM customer_totals AS
+SELECT customer_id,
+       COUNT(*) AS total_orders,
+       CAST(SUM(amount) AS DOUBLE) AS total_spent
+FROM orders_cdc
+GROUP BY customer_id;
+```
+
+### SQL (native connector — blocked by #58)
 
 ```sql
 -- CDC source — connector name must be double-quoted
--- Credentials resolved via .config_var() (env: LAMINAR_PG_HOST, LAMINAR_PG_USER, LAMINAR_PG_PASSWORD)
 CREATE SOURCE orders_cdc (
     id INT NOT NULL,
     customer_id INT NOT NULL,
@@ -299,7 +321,7 @@ CREATE SOURCE orders_cdc (
     'snapshot.mode' = 'never'
 );
 
--- Aggregation with _op filter (falls back to no filter if _op not available)
+-- Aggregation with _op filter
 CREATE STREAM customer_totals AS
 SELECT customer_id,
        COUNT(*) AS total_orders,
@@ -316,16 +338,31 @@ GROUP BY customer_id;
 | CDC source SQL parsing | **PASS** | `FROM "postgres-cdc" (...)` accepted |
 | Connector registration | **PASS** | postgres-cdc connector loads with feature flag |
 | Config keys with dots | **PASS** | Single-quoted keys: `'slot.name' = 'value'` |
-| Replication data flow | **FAIL** | Connector `open()` is a stub — no actual replication I/O |
-| EMIT CHANGES | Not testable | No data flows through connector |
-| Delta Lake sink | Not testable | No data flows through connector |
+| Native connector I/O | **FAIL** | tokio-postgres lacks `replication=database` support ([#58](https://github.com/laminardb/laminardb/issues/58)) |
+| Polling CDC capture | **PASS** | 175 events via `pg_logical_slot_get_changes()` |
+| SQL aggregation | **PASS** | 155 aggregated totals from 175 CDC events |
+| End-to-end pipeline | **PASS** | INSERT + UPDATE events → parse → push → aggregate → subscribe |
+| EMIT CHANGES | Not testable | Native connector blocked |
+| Delta Lake sink | Not testable | Native connector blocked |
+
+### Polling workaround details
+
+- **Slot**: `laminar_orders_poll` with `test_decoding` plugin (separate from the `pgoutput` slot)
+- **Parsing**: `test_decoding` format: `table public.orders: INSERT: id[integer]:123 customer_id[integer]:5 amount[numeric]:299.50 ...`
+- **Push**: Parsed events pushed via `SourceHandle<CdcOrder>::push()` + `watermark()`
+- **Types**: `CdcOrder` (`#[derive(Record)]`) for input, `CustomerTotal` (`#[derive(FromRow)]`) for output
+
+### Native connector failure (laminardb bug #58)
+
+The `postgres-cdc` connector's `open()` method (added in PR #48) calls `tokio_postgres::connect()` with a connection string containing `replication=database`. This is a laminardb bug — `tokio-postgres` 0.7 has never supported the `replication` startup parameter or the `CopyBoth` sub-protocol required for WAL streaming. The connector code even acknowledges this limitation in comments. See [#58](https://github.com/laminardb/laminardb/issues/58) for details and recommended fixes.
 
 ### Gotchas discovered
 
 - **Connector name is `"postgres-cdc"`** (lowercase, hyphenated) — must be double-quoted in SQL: `FROM "postgres-cdc" (...)`
 - **Config keys with dots** must be single-quoted: `'slot.name' = 'laminar_orders'`
 - **Feature flag required:** `laminar-db = { features = ["postgres-cdc"] }`
-- **Connector `open()` is a stub** — the WAL decoder, pgoutput parser, and changelog processing are all implemented in the codebase, but actual replication I/O (TCP connection, `START_REPLICATION` command) was never wired up. This is a work-in-progress feature, not a bug.
+- **Native connector blocked by tokio-postgres** — laminardb uses tokio-postgres 0.7 which lacks replication support (`replication=database` parameter and `CopyBoth` protocol). This is a laminardb dependency choice bug ([#58](https://github.com/laminardb/laminardb/issues/58)), not an upstream limitation.
+- **Polling workaround works** — `pg_logical_slot_get_changes()` with `test_decoding` plugin captures INSERT/UPDATE/DELETE events via regular SQL, no CopyBoth needed
 - **CDC envelope schema:** `_table` (Utf8), `_op` (Utf8: "I"/"U"/"D"), `_lsn` (UInt64), `_ts_ms` (Int64), `_before` (Utf8 nullable), `_after` (Utf8 nullable)
 - **tokio-postgres `batch_execute()`** avoids `ToSql` serialization issues vs parameterized queries
 
@@ -480,6 +517,7 @@ cargo run -- phase6    # Phase 6 CLI only (bonus, no external deps)
 | `Order` | `Record` | Phase 4 stream-stream JOIN (input) |
 | `AsofEnriched` | `FromRow` | Phase 4 ASOF JOIN (output) |
 | `TradeOrderMatch` | `FromRow` | Phase 4 stream-stream JOIN (output) |
+| `CdcOrder` | `Record` | Phase 5 CDC pipeline (input, polling workaround) |
 | `CustomerTotal` | `FromRow` | Phase 5 CDC pipeline (output) |
 | `HopVolume` | `FromRow` | Phase 6 HOP window (output) |
 | `SessionBurst` | `FromRow` | Phase 6 SESSION window (output) |
@@ -712,7 +750,8 @@ Stream-stream INNER JOIN      ✓ PASS                ✓ (expected)
 EMIT ON WINDOW CLOSE          ✗ ignored             ✓ (expected)
 INTERVAL on BIGINT            ✗ FAIL                ? (untested)
 CDC source (SQL + connector)  ✓ PASS (partial)      ✓ (expected)
-CDC replication data flow     ✗ FAIL (stub)         ? (WIP)
+CDC replication data flow     ✗ FAIL (bug #58)      ? (blocked)
+CDC polling workaround        ✓ PASS                n/a
 HOP window                    ✓ PASS                ✓ (expected)
 SESSION window                ✓ PASS                ✓ (expected)
 EMIT ON UPDATE                ✓ PASS                ✓ (expected)

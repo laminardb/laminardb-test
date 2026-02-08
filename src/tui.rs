@@ -641,6 +641,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            // In polling mode: read CDC events from slot and push into laminardb
+            if h.polling_mode {
+                if let Some(ref source) = h.source_handle {
+                    if let Ok(count) =
+                        crate::phase5_cdc::poll_and_push(&h.pg_client, source).await
+                    {
+                        if count > 0 {
+                            app.record_pipeline_count(p5_idx, "cdc_polled", count as u64);
+                        }
+                    }
+                }
+            }
+
             // Poll CDC subscriber for aggregated totals
             if let Some(ref sub) = h.totals_sub {
                 for _ in 0..64 {

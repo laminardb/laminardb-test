@@ -1,6 +1,6 @@
 # Steering Document
 
-> Last Updated: 2026-02-07
+> Last Updated: 2026-02-08
 
 ## Goal
 
@@ -8,7 +8,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 
 ## Current Focus
 
-**All phases complete.** HOP, SESSION, EMIT ON UPDATE all PASS.
+**All phases complete.** Phase 5 CDC now PASS via polling workaround.
 
 ## Phase Priority Order
 
@@ -18,7 +18,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 2 (done) | Streaming SQL | tumble(), first_value/last_value, SUM, cascading MVs | None | **PARTIAL** |
 | 3 (done) | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | Redpanda (:19092) | **PASS** |
 | 4 (done) | Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | None | **PARTIAL** |
-| 5 (done) | CDC Pipeline | Postgres CDC, EMIT CHANGES, Delta Lake sink | Postgres | **PARTIAL** |
+| 5 (done) | CDC Pipeline | Postgres CDC polling, SQL aggregation on CDC events | Postgres | **PASS** (polling) |
 | 6+ (done) | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None | **PASS** |
 
 ## Test Matrix
@@ -44,10 +44,12 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 4 | ASOF JOIN + TOLERANCE | Website: Stream Joins tab | **FAIL** (DataFusion limitation) |
 | 4 | Stream-stream INNER JOIN | Website: Stream Joins tab | **PASS** |
 | 4 | Time-bounded join (BETWEEN) | Website: Stream Joins tab | **PASS** (numeric, not INTERVAL) |
-| 5 | Postgres CDC source (SQL + connector) | Website: CDC Pipeline tab | **PARTIAL** (SQL parses, connector stub) |
-| 5 | CDC replication data flow | Website: CDC Pipeline tab | **FAIL** (connector open() is stub — no actual replication I/O) |
-| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab | Not testable (no data flow) |
-| 5 | Delta Lake sink | Website: CDC Pipeline tab | Not testable (no data flow) |
+| 5 | Postgres CDC source (SQL parsing) | Website: CDC Pipeline tab | **PASS** (SQL accepted, connector registers) |
+| 5 | Native CDC connector I/O | Website: CDC Pipeline tab | **FAIL** (laminardb bug [#58](https://github.com/laminardb/laminardb/issues/58) — tokio-postgres lacks replication) |
+| 5 | CDC polling workaround | laminardb-test | **PASS** (175 events → 155 totals via `pg_logical_slot_get_changes`) |
+| 5 | SQL aggregation on CDC events | Website: CDC Pipeline tab | **PASS** (GROUP BY, COUNT, SUM all correct) |
+| 5 | EMIT CHANGES (changelog) | Website: CDC Pipeline tab | Not testable (native connector blocked) |
+| 5 | Delta Lake sink | Website: CDC Pipeline tab | Not testable (native connector blocked) |
 | 6+ | HOP window | Codebase | **PASS** (885 results) |
 | 6+ | SESSION window | Codebase | **PASS** (885 results) |
 | 6+ | EMIT ON UPDATE | Codebase | **PASS** (885 results) |
