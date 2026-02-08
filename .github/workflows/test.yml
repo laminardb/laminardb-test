@@ -31,16 +31,15 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
+      - name: Get laminardb commit hash (for cache key)
+        id: laminardb-hash
+        run: echo "hash=$(git -C ../laminardb rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          shared-key: "laminardb-${{ steps.laminardb-hash.outputs.hash }}"
+          cache-on-failure: true
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake postgresql-client libcurl4-openssl-dev pkg-config libssl-dev
