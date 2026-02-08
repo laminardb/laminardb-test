@@ -2282,6 +2282,7 @@ dependencies = [
  "tracing",
  "uuid",
  "winapi",
+ "xorf",
 ]
 
 [[package]]
@@ -2291,14 +2292,18 @@ dependencies = [
  "anyhow",
  "arrow",
  "arrow-array",
+ "arrow-ipc",
  "arrow-schema",
  "async-trait",
  "datafusion",
  "datafusion-common",
+ "fxhash",
  "laminar-connectors",
  "laminar-core",
  "laminar-sql",
+ "laminar-storage",
  "parking_lot",
+ "serde",
  "serde_json",
  "sqlparser 0.60.0",
  "thiserror",
@@ -2344,6 +2349,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "bytes",
  "crc32c",
  "fxhash",
@@ -4668,6 +4674,16 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "xorf"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45e820b97864028eb5069aabf2d90ad7bc279a0ed0292f1306451ce4b91adc13"
+dependencies = [
+ "libm",
+ "rand 0.8.5",
+]
 
 [[package]]
 name = "yoke"
