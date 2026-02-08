@@ -96,8 +96,11 @@ jobs:
           done
 
       # ── Build ─────────────────────────────────────────────────
-      - name: Build
+      - name: Build (debug)
         run: cargo build
+
+      - name: Build (release, for stress test)
+        run: cargo build --release
 
       # ── Run Phases ────────────────────────────────────────────
       - name: "Phase 1: Rust API"
@@ -188,30 +191,38 @@ jobs:
         id: phase7
         timeout-minutes: 10
         run: |
-          set +e
-          OUTPUT=$(STRESS_DURATION=10 cargo run --release -- phase7 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
+          STRESS_DURATION=10 cargo run --release -- phase7 2>&1 | tee stress_output.txt
           echo "output<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          cat stress_output.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-          exit 0
+
+      - name: Stress test summary
+        if: always()
+        run: |
+          echo "## Stress Test Results (Phase 7)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Only include the results table and summary (last 30 lines) to stay under step summary size limit
+          tail -30 stress_output.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "(no output)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       # ── Criterion Benchmarks ────────────────────────────────
       - name: "Benchmark: Criterion throughput (push_cycle)"
         id: bench
         timeout-minutes: 10
         run: |
-          set +e
-          OUTPUT=$(cargo bench -- --output-format bencher 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
+          cargo bench 2>&1 | tee bench_output.txt
           echo "output<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          cat bench_output.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-          exit 0
+
+      - name: Benchmark summary
+        if: always()
+        run: |
+          echo "## Criterion Benchmarks" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Only include benchmark result lines to stay under step summary size limit
+          grep -E '(^Benchmarking|^pipeline_setup|^push_cycle|time:)' bench_output.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "(no output)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       # ── Results Summary ───────────────────────────────────────
       - name: Generate Job Summary
@@ -276,33 +287,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Phase Output" >> $GITHUB_STEP_SUMMARY
 
-          for PHASE in 1 2 3 4 5 6 7; do
+          # Truncate phase outputs to last 30 lines each to stay under 1024k step summary limit
+          for PHASE in 1 2 3 4 5 6; do
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "<details>" >> $GITHUB_STEP_SUMMARY
-            echo "<summary>Phase ${PHASE} output</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Phase ${PHASE} output (last 30 lines)</summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             case $PHASE in
-              1) echo "$P1_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              2) echo "$P2_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              3) echo "$P3_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              4) echo "$P4_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              5) echo "$P5_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              6) echo "$P6_OUT" >> $GITHUB_STEP_SUMMARY ;;
-              7) echo "$P7_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              1) echo "$P1_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              2) echo "$P2_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              3) echo "$P3_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              4) echo "$P4_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              5) echo "$P5_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              6) echo "$P6_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
             esac
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
           done
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details>" >> $GITHUB_STEP_SUMMARY
-          echo "<summary>Criterion Benchmark output</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "$BENCH_OUT" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
 
       # ── Issue Regression Detection ────────────────────────────
       - name: Check known issues
