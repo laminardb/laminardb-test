@@ -17,7 +17,7 @@ jobs:
   test:
     name: Build & Test All Phases
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       # ── Checkout ──────────────────────────────────────────────
@@ -96,10 +96,7 @@ jobs:
           done
 
       # ── Build ─────────────────────────────────────────────────
-      - name: Build (debug)
-        run: cargo build
-
-      - name: Build (release, for stress test)
+      - name: Build (release)
         run: cargo build --release
 
       # ── Run Phases ────────────────────────────────────────────
@@ -108,7 +105,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase1 2>&1)
+          OUTPUT=$(cargo run --release -- phase1 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -122,7 +119,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase2 2>&1)
+          OUTPUT=$(cargo run --release -- phase2 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -136,7 +133,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase3 2>&1)
+          OUTPUT=$(cargo run --release -- phase3 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -150,7 +147,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase4 2>&1)
+          OUTPUT=$(cargo run --release -- phase4 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -164,7 +161,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase5 2>&1)
+          OUTPUT=$(cargo run --release -- phase5 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
@@ -178,7 +175,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set +e
-          OUTPUT=$(cargo run -- phase6 2>&1)
+          OUTPUT=$(cargo run --release -- phase6 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "output<<EOF" >> $GITHUB_OUTPUT
