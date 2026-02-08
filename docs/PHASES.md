@@ -461,6 +461,82 @@ All three window types and the emit mode work correctly in the embedded pipeline
 
 ---
 
+## Phase 7: Stress Test (Throughput Benchmark)
+
+**File:** `src/phase7_stress.rs` | **Status:** PENDING (awaiting first run)
+
+### What it tests
+
+Throughput benchmark using the same 6-stream fraud-detect pipeline from `laminardb-fraud-detect`, adapted to use **path dependencies** (local laminardb source) instead of published crates (v0.1.1). Compares against the published crate baseline.
+
+### Published crate baseline (v0.1.1, release mode, 10s per level)
+
+```
+ Level   Target/s   Actual/s   Push p50   Push p99
+     1        100         98       28us      129us
+     2        250        245       55us       87us
+     3       1000        608     54.3ms     57.1ms   <- saturation
+     4       2000        725     56.6ms    164.9ms
+     5      10000       1623     88.4ms    197.6ms
+     6      50000       2222    208.4ms    319.5ms
+     7     200000       2275    432.7ms    435.5ms   <- peak
+```
+
+Peak sustained throughput: ~2,275 trades/sec. Saturation at Level 3 (~1,000 target).
+
+### Pipeline (6 concurrent streams)
+
+| Stream | Window Type | SQL Feature |
+|--------|-------------|-------------|
+| `vol_baseline` | HOP(2s slide, 10s window) | SUM, COUNT, AVG, GROUP BY symbol |
+| `ohlc_vol` | TUMBLE(5s) | tumble(), first_value/last_value, MAX-MIN |
+| `rapid_fire` | SESSION(2s gap) | COUNT, SUM, MIN, MAX, GROUP BY account_id |
+| `wash_score` | TUMBLE(5s) | CASE WHEN, conditional SUM, GROUP BY account_id+symbol |
+| `suspicious_match` | INNER JOIN | symbol match + ts BETWEEN -2000/+2000 |
+| `asof_match` | ASOF JOIN | MATCH_CONDITION(t.ts >= o.ts) ON symbol |
+
+### How it works
+
+1. Sets up 2 sources (`trades` 7-col, `orders` 7-col) and 6 streams
+2. Runs 7 stress levels (10s each by default), ramping from 100 to 200,000 target trades/sec
+3. Each cycle: generates trades+orders with constant 50ms timestamp spacing, pushes via `push_batch()`, polls all 6 subscribers
+4. Records push latency (p50/p99), actual throughput, per-stream output counts
+5. Prints summary table with comparison against published crate baseline
+6. Reports ASOF JOIN status (issue #57) and SESSION window behavior
+
+### Running
+
+```bash
+STRESS_DURATION=10 cargo run -- phase7            # debug mode
+STRESS_DURATION=10 cargo run --release -- phase7   # release mode (comparable to baseline)
+```
+
+### What to look for
+
+1. **Peak throughput** vs 2,275/sec baseline
+2. **Saturation point** — where actual < 90% of target
+3. **ASOF JOIN output** — published crate produces 0 (issue #57)
+4. **SESSION window ratio** — published crate emits ~1:1 (per-batch, not per-session)
+
+### Results
+
+> **Not yet run.** Update this section after first debug + release run.
+
+### Types
+
+| Type | Derive | Role |
+|------|--------|------|
+| `StressTrade` | `Record` | Input: 7-field trade event |
+| `StressOrder` | `Record` | Input: 7-field order event |
+| `VolumeBaseline` | `FromRow` | Output: HOP window per-symbol volume |
+| `OhlcVolatility` | `FromRow` | Output: TUMBLE OHLC + price_range |
+| `RapidFireBurst` | `FromRow` | Output: SESSION burst detection |
+| `WashScore` | `FromRow` | Output: TUMBLE + CASE WHEN wash score |
+| `SuspiciousMatch` | `FromRow` | Output: INNER JOIN trade-order matches |
+| `AsofMatch` | `FromRow` | Output: ASOF JOIN front-running detection |
+
+---
+
 ## TUI Dashboard
 
 **File:** `src/tui.rs`
@@ -499,6 +575,7 @@ cargo run -- phase3    # Phase 3 CLI only (needs Redpanda on :19092)
 cargo run -- phase4    # Phase 4 CLI only
 cargo run -- phase5    # Phase 5 CLI only (needs Postgres on :5432)
 cargo run -- phase6    # Phase 6 CLI only (bonus, no external deps)
+cargo run -- phase7    # Phase 7 stress test (CLI only, no TUI)
 ```
 
 ---
@@ -521,6 +598,14 @@ cargo run -- phase6    # Phase 6 CLI only (bonus, no external deps)
 | `CustomerTotal` | `FromRow` | Phase 5 CDC pipeline (output) |
 | `HopVolume` | `FromRow` | Phase 6 HOP window (output) |
 | `SessionBurst` | `FromRow` | Phase 6 SESSION window (output) |
+| `StressTrade` | `Record` | Phase 7 stress test (input, 7 fields) |
+| `StressOrder` | `Record` | Phase 7 stress test (input, 7 fields) |
+| `VolumeBaseline` | `FromRow` | Phase 7 HOP window output |
+| `OhlcVolatility` | `FromRow` | Phase 7 TUMBLE OHLC output |
+| `RapidFireBurst` | `FromRow` | Phase 7 SESSION burst output |
+| `WashScore` | `FromRow` | Phase 7 TUMBLE + CASE WHEN output |
+| `SuspiciousMatch` | `FromRow` | Phase 7 INNER JOIN output |
+| `AsofMatch` | `FromRow` | Phase 7 ASOF JOIN output |
 
 ## Data Generator
 
@@ -755,4 +840,6 @@ CDC polling workaround        ✓ PASS                n/a
 HOP window                    ✓ PASS                ✓ (expected)
 SESSION window                ✓ PASS                ✓ (expected)
 EMIT ON UPDATE                ✓ PASS                ✓ (expected)
+6-stream stress pipeline      ✓ PENDING             n/a
+Throughput benchmark           ✓ PENDING             n/a
 ```

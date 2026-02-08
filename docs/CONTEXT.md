@@ -28,10 +28,15 @@
   - Filed issue [#58](https://github.com/laminardb/laminardb/issues/58) on laminardb repo
 - TUI dashboard with pipeline flow visualization, latency stats
 - GitHub issues filed: #35 (cascading MV), #44 (CDC stub), #58 (tokio-postgres replication)
+- Phase 7 (Stress Test) implemented — 6-stream fraud-detect pipeline adapted from laminardb-fraud-detect
+  - 2 sources (trades 7-col, orders 7-col) → 6 concurrent streams (HOP, TUMBLE, SESSION, TUMBLE+CASE, INNER JOIN, ASOF JOIN)
+  - 7-level ramp test: 100 → 200,000 target trades/sec
+  - Compares path deps throughput against published crate baseline (~2,275/sec peak)
+  - CI runs in release mode with STRESS_DURATION=5
 
 ### Where We Left Off
-- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**, **Phase 5: PASS (polling)**, **Phase 6+: PASS**
-- All phases complete
+- **Phase 1: PASS**, **Phase 2: PARTIAL**, **Phase 3: PASS**, **Phase 4: PARTIAL**, **Phase 5: PASS (polling)**, **Phase 6+: PASS**, **Phase 7: PENDING**
+- Phase 7 implemented, awaiting first run results
 
 ### Current Phase Status
 
@@ -43,9 +48,12 @@
 | 4: Stream Joins | **PARTIAL** | INNER JOIN PASS (88 matches), ASOF JOIN FAIL (connector-only) |
 | 5: CDC Pipeline | **PASS** | Polling workaround: 175 events → 155 totals. Native connector blocked by #58 |
 | 6+: Bonus | **PASS** | HOP (885), SESSION (885), EMIT ON UPDATE (885) — all from 890 trades |
+| 7: Stress Test | **PENDING** | 6-stream pipeline, 7-level ramp, baseline: ~2,275/sec |
 
 ### Immediate Next Steps
-1. All phases implemented and tested — project complete
+1. Run Phase 7 stress test in debug and release mode
+2. Record results, compare against published crate baseline
+3. Update docs with actual throughput numbers
 
 ### Key Learnings
 - `laminar-core` required as direct dep (Record derive macro references it)
@@ -77,3 +85,9 @@
 - **Phase 5 CDC**: `CdcOrder` type (`#[derive(Record)]`) with `#[event_time]` on `ts` field for watermark support
 - **Phase 5 CDC**: Envelope schema: `_table, _op, _lsn, _ts_ms, _before, _after` — `_op` values: "I", "U", "D"
 - **Phase 5 CDC**: tokio-postgres `batch_execute()` avoids ToSql serialization issues with parameterized queries
+- **Phase 7 Stress**: Types prefixed with `Stress` to avoid conflicts: `StressTrade` (7 fields), `StressOrder` (7 fields)
+- **Phase 7 Stress**: Constant 50ms timestamp spacing between trades prevents JOIN fan-out variance
+- **Phase 7 Stress**: `STRESS_DURATION` env var controls seconds per level (default 10)
+- **Phase 7 Stress**: Published crate baseline: ~2,275/sec peak (release), ~1,736/sec (debug)
+- **Phase 7 Stress**: ASOF JOIN expected to produce 0 output (same as published crate issue #57)
+- **Phase 7 Stress**: SESSION window expected to emit per-batch (~1:1 ratio), not per-session

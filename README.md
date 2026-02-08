@@ -14,6 +14,7 @@ Test app that exercises each [LaminarDB](https://laminardb.io) pipeline type fro
 | 4: Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | **PARTIAL** (ASOF: DataFusion limitation) |
 | 5: CDC Pipeline | Postgres CDC polling, SQL aggregation on CDC events | **PASS** (polling; native connector blocked by [#58](https://github.com/laminardb/laminardb/issues/58)) |
 | 6+: Bonus | HOP window, SESSION window, EMIT ON UPDATE | **PASS** |
+| 7: Stress Test | 6-stream fraud-detect pipeline, 7-level throughput ramp | **PENDING** (run locally) |
 
 See [docs/PHASES.md](docs/PHASES.md) for detailed per-feature results and gotchas discovered.
 
@@ -52,6 +53,13 @@ cargo run -- phase3    # Kafka pipeline (needs Redpanda on :19092)
 cargo run -- phase4    # Stream joins (ASOF + stream-stream)
 cargo run -- phase5    # CDC pipeline (needs Postgres on :5432)
 cargo run -- phase6    # Bonus: HOP, SESSION, EMIT ON UPDATE
+cargo run -- phase7    # Stress test: 6-stream pipeline throughput benchmark
+```
+
+For the stress test, use release mode for comparable numbers:
+
+```bash
+STRESS_DURATION=10 cargo run --release -- phase7
 ```
 
 ## Environment Variables
@@ -63,6 +71,7 @@ Phase 5 (CDC) reads credentials from env vars with local-dev defaults:
 | `LAMINAR_PG_HOST` | `localhost` | Postgres connection + CDC connector |
 | `LAMINAR_PG_USER` | `laminar` | Postgres connection + CDC connector |
 | `LAMINAR_PG_PASSWORD` | `laminar` | Postgres connection + CDC connector |
+| `STRESS_DURATION` | `10` | Seconds per stress level (Phase 7) |
 
 ## Project Structure
 
@@ -77,6 +86,7 @@ src/
   phase4_joins.rs  # ASOF JOIN + stream-stream INNER JOIN
   phase5_cdc.rs    # CDC pipeline (Postgres)
   phase6_bonus.rs  # HOP, SESSION, EMIT ON UPDATE
+  phase7_stress.rs # Stress test: 6-stream fraud-detect throughput benchmark
   tui.rs           # Ratatui dashboard with pipeline visualization
 docs/
   PHASES.md        # Detailed per-phase documentation and results

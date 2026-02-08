@@ -16,6 +16,7 @@ mod phase3_kafka;
 mod phase4_joins;
 mod phase5_cdc;
 mod phase6_bonus;
+mod phase7_stress;
 mod tui;
 mod types;
 
@@ -32,9 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("phase4") => phase4_joins::run().await?,
         Some("phase5") => phase5_cdc::run().await?,
         Some("phase6") | Some("bonus") => phase6_bonus::run().await?,
+        Some("phase7") | Some("stress") => phase7_stress::run().await?,
         Some(other) => {
             eprintln!("Unknown phase: {}", other);
-            eprintln!("Available: (no args for TUI), phase1, phase2, phase3, phase4, phase5, phase6/bonus");
+            eprintln!("Available: (no args for TUI), phase1..phase7, stress, bonus");
             std::process::exit(1);
         }
     }

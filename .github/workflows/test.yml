@@ -184,6 +184,20 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           exit 0
 
+      - name: "Phase 7: Stress Test (6-stream fraud-detect pipeline)"
+        id: phase7
+        timeout-minutes: 10
+        run: |
+          set +e
+          OUTPUT=$(STRESS_DURATION=5 cargo run --release -- phase7 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
       # ── Results Summary ───────────────────────────────────────
       - name: Generate Job Summary
         if: always()
@@ -194,6 +208,7 @@ jobs:
           P4_OUT: ${{ steps.phase4.outputs.output }}
           P5_OUT: ${{ steps.phase5.outputs.output }}
           P6_OUT: ${{ steps.phase6.outputs.output }}
+          P7_OUT: ${{ steps.phase7.outputs.output }}
         run: |
           extract_status() {
             local output="$1"
@@ -216,6 +231,7 @@ jobs:
           P4_STATUS=$(extract_status "$P4_OUT")
           P5_STATUS=$(extract_status "$P5_OUT")
           P6_STATUS=$(extract_status "$P6_OUT")
+          P7_STATUS=$(extract_status "$P7_OUT")
 
           STATUS_EMOJI() {
             case "$1" in
@@ -239,11 +255,12 @@ jobs:
           echo "| 4 | Stream Joins | $(STATUS_EMOJI $P4_STATUS) $P4_STATUS | ASOF JOIN, stream-stream INNER JOIN |" >> $GITHUB_STEP_SUMMARY
           echo "| 5 | CDC Pipeline | $(STATUS_EMOJI $P5_STATUS) $P5_STATUS | FROM postgres-cdc, _op filter, aggregation |" >> $GITHUB_STEP_SUMMARY
           echo "| 6+ | Bonus | $(STATUS_EMOJI $P6_STATUS) $P6_STATUS | HOP window, SESSION window, EMIT ON UPDATE |" >> $GITHUB_STEP_SUMMARY
+          echo "| 7 | Stress Test | $(STATUS_EMOJI $P7_STATUS) $P7_STATUS | 6-stream fraud-detect pipeline, 7-level ramp, throughput benchmark |" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Phase Output" >> $GITHUB_STEP_SUMMARY
 
-          for PHASE in 1 2 3 4 5 6; do
+          for PHASE in 1 2 3 4 5 6 7; do
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "<details>" >> $GITHUB_STEP_SUMMARY
             echo "<summary>Phase ${PHASE} output</summary>" >> $GITHUB_STEP_SUMMARY
@@ -256,6 +273,7 @@ jobs:
               4) echo "$P4_OUT" >> $GITHUB_STEP_SUMMARY ;;
               5) echo "$P5_OUT" >> $GITHUB_STEP_SUMMARY ;;
               6) echo "$P6_OUT" >> $GITHUB_STEP_SUMMARY ;;
+              7) echo "$P7_OUT" >> $GITHUB_STEP_SUMMARY ;;
             esac
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
@@ -267,6 +285,7 @@ jobs:
         env:
           P2_OUTPUT: ${{ steps.phase2.outputs.output }}
           P4_OUTPUT: ${{ steps.phase4.outputs.output }}
+          P7_OUTPUT: ${{ steps.phase7.outputs.output }}
         run: |
           echo "### Issue Tracker" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -287,6 +306,18 @@ jobs:
           else
             echo "laminardb#37 (ASOF JOIN): still failing (asof_results=$ASOF_RESULTS)"
             echo "- **laminardb#37** ASOF JOIN: not producing output" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Phase 7: Extract peak throughput and ASOF JOIN status
+          PEAK_TPS=$(echo "$P7_OUTPUT" | grep -oP 'Peak sustained throughput: ~\K\d+' || echo "0")
+          ASOF_P7=$(echo "$P7_OUTPUT" | grep -oP 'asof_match\s+\K\d+' || echo "0")
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Stress Test (Phase 7)" >> $GITHUB_STEP_SUMMARY
+          echo "- Peak throughput: ~${PEAK_TPS} trades/sec (baseline: ~2,275/sec)" >> $GITHUB_STEP_SUMMARY
+          if [ "$ASOF_P7" -gt 0 ] 2>/dev/null; then
+            echo "- **laminardb#57** ASOF JOIN in stress pipeline: FIXED ($ASOF_P7 output rows)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **laminardb#57** ASOF JOIN in stress pipeline: 0 output (same as published crate)" >> $GITHUB_STEP_SUMMARY
           fi
 
       # ── Cleanup ───────────────────────────────────────────────

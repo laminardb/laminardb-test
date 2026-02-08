@@ -8,7 +8,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 
 ## Current Focus
 
-**All phases complete.** Phase 5 CDC now PASS via polling workaround.
+**Phase 7 (Stress Test) implemented.** Phases 1-6 complete. Phase 7 awaiting first run results.
 
 ## Phase Priority Order
 
@@ -20,6 +20,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 4 (done) | Stream Joins | ASOF JOIN, stream-stream INNER JOIN, time bounds | None | **PARTIAL** |
 | 5 (done) | CDC Pipeline | Postgres CDC polling, SQL aggregation on CDC events | Postgres | **PASS** (polling) |
 | 6+ (done) | Bonus | HOP, SESSION, EMIT ON UPDATE (not on website) | None | **PASS** |
+| 7 (impl) | Stress Test | 6-stream fraud-detect pipeline, 7-level throughput ramp | None | **PENDING** |
 
 ## Test Matrix
 
@@ -53,6 +54,13 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 6+ | HOP window | Codebase | **PASS** (885 results) |
 | 6+ | SESSION window | Codebase | **PASS** (885 results) |
 | 6+ | EMIT ON UPDATE | Codebase | **PASS** (885 results) |
+| 7 | HOP (vol_baseline) | laminardb-fraud-detect | **PENDING** |
+| 7 | TUMBLE OHLC (ohlc_vol) | laminardb-fraud-detect | **PENDING** |
+| 7 | SESSION (rapid_fire) | laminardb-fraud-detect | **PENDING** |
+| 7 | TUMBLE + CASE WHEN (wash_score) | laminardb-fraud-detect | **PENDING** |
+| 7 | INNER JOIN (suspicious_match) | laminardb-fraud-detect | **PENDING** |
+| 7 | ASOF JOIN (asof_match) | laminardb-fraud-detect | **PENDING** |
+| 7 | 7-level throughput ramp | laminardb-fraud-detect | **PENDING** |
 
 ## Decisions
 

@@ -11,6 +11,8 @@ cargo run -- phase2    # Streaming SQL + cascading MVs
 cargo run -- phase3    # Kafka pipeline (needs Redpanda on localhost:19092)
 cargo run -- phase4    # Stream joins (ASOF + stream-stream)
 cargo run -- phase5    # CDC pipeline (needs Postgres)
+cargo run -- phase6    # Bonus: HOP, SESSION, EMIT ON UPDATE
+cargo run -- phase7    # Stress test (6-stream throughput benchmark)
 cargo run              # TUI with all phases as tabs
 ```
 
@@ -26,6 +28,8 @@ src/
 ├── phase3_kafka.rs  # Phase 3: Kafka source/sink pipeline (website tab 3)
 ├── phase4_joins.rs  # Phase 4: ASOF + stream-stream joins (website tab 4)
 ├── phase5_cdc.rs    # Phase 5: CDC pipeline (website tab 5, needs Postgres)
+├── phase6_bonus.rs  # Phase 6: HOP, SESSION, EMIT ON UPDATE
+├── phase7_stress.rs # Phase 7: 6-stream fraud-detect throughput benchmark
 └── tui.rs           # Ratatui TUI with animated pipeline flow visualization
 docs/
 ├── CONTEXT.md       # Session continuity (where we left off)
@@ -93,3 +97,4 @@ Path deps to local laminardb (must be at `../laminardb/`):
 | 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PARTIAL** (INNER pass, ASOF fail) |
 | 5 | CDC Pipeline | postgres-cdc SQL, polling workaround | **PASS** (polling; native connector blocked by [#58](https://github.com/laminardb/laminardb/issues/58)) |
 | 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | **PASS** |
+| 7 | Stress Test | 6-stream fraud-detect pipeline, 7-level ramp | **PENDING** (run locally) |
