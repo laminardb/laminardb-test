@@ -6,10 +6,11 @@
 //! - EMIT ON WINDOW CLOSE (parser accepts it; micro-batch ignores it)
 //! - Cascading MVs: ohlc_10s reads FROM ohlc_5s (tests stream-from-stream)
 //!
-//! Known limitations of the embedded micro-batch pipeline:
-//! - EMIT ON WINDOW CLOSE has no effect (each micro-batch is stateless)
-//! - Cascading MVs don't work (only CREATE SOURCE tables feed the executor,
-//!   stream results are pushed to subscribers but not back into the executor)
+//! v0.12.0 status:
+//! - EMIT ON WINDOW CLOSE now works (Issue #52 — see Phase 8 for dedicated test)
+//! - Cascading MVs now work (Issue #35 — topological ordering fix in v0.12.0)
+//!   Previously: only CREATE SOURCE tables fed the executor.
+//!   Now: intermediate results are registered as temp tables for downstream queries.
 
 use std::time::Duration;
 

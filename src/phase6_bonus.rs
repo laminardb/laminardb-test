@@ -2,8 +2,11 @@
 //!
 //! Tests features supported by laminardb but not shown on the website:
 //! - HOP (sliding) window: overlapping windows with slide + size
-//! - SESSION window: gap-based dynamic windows
+//! - SESSION window: gap-based dynamic windows (fixed in v0.12.0, Issue #55)
 //! - EMIT ON UPDATE: emit intermediate results on every state change
+//!
+//! v0.12.0: SESSION window now emits single row per session (not per-batch).
+//! See Phase 8 for dedicated SESSION fix validation test.
 //!
 //! All embedded, no external dependencies.
 

@@ -17,6 +17,7 @@ mod phase4_joins;
 mod phase5_cdc;
 mod phase6_bonus;
 mod phase7_stress;
+mod phase8_v012;
 mod tui;
 mod types;
 
@@ -34,9 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("phase5") => phase5_cdc::run().await?,
         Some("phase6") | Some("bonus") => phase6_bonus::run().await?,
         Some("phase7") | Some("stress") => phase7_stress::run().await?,
+        Some("phase8") | Some("v012") => phase8_v012::run().await?,
         Some(other) => {
             eprintln!("Unknown phase: {}", other);
-            eprintln!("Available: (no args for TUI), phase1..phase7, stress, bonus");
+            eprintln!("Available: (no args for TUI), phase1..phase8, stress, bonus, v012");
             std::process::exit(1);
         }
     }
