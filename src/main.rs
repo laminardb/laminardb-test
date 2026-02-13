@@ -19,6 +19,8 @@ mod phase6_bonus;
 mod phase7_stress;
 mod phase8_v012;
 mod phase9_api;
+mod phase10_sql_ext;
+mod phase11_subs;
 mod tui;
 mod types;
 
@@ -38,9 +40,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("phase7") | Some("stress") => phase7_stress::run().await?,
         Some("phase8") | Some("v012") => phase8_v012::run().await?,
         Some("phase9") | Some("api") => phase9_api::run().await?,
+        Some("phase10") | Some("sql") => phase10_sql_ext::run().await?,
+        Some("phase11") | Some("subs") => phase11_subs::run().await?,
         Some(other) => {
             eprintln!("Unknown phase: {}", other);
-            eprintln!("Available: (no args for TUI), phase1..phase9, stress, bonus, v012, api");
+            eprintln!("Available: (no args for TUI), phase1..phase11, stress, bonus, v012, api, sql, subs");
             std::process::exit(1);
         }
     }

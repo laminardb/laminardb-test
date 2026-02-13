@@ -8,35 +8,26 @@
 
 ### What Was Accomplished
 
-- **v0.12.0 sync**: Updated local laminardb to v0.12.0 (27 upstream commits), confirmed all existing phases still pass
-- **Phase 7 (Stress Test) results**: 6-stream fraud-detect pipeline benchmarked
-  - Ubuntu CI (release): peak ~25,554 trades/sec (11x above published crate baseline of ~2,275/sec)
-  - macOS (release): ~2,330/sec (comparable to published crate baseline)
-  - ASOF JOIN: produces 42K-56K rows (was 0 with published crates — fixed upstream)
-  - SESSION: proper merge (0.09-0.71:1 ratio, not the ~1:1 per-batch emission)
-  - Criterion benchmarks added: push_throughput, end_to_end, pipeline_setup (sizes 100-5000)
-- **Phase 8 (v0.12.0 Feature Tests)**: 5/5 PASS
-  - Cascading MVs (#35): PASS — ohlc_10s FROM ohlc_5s produces output
-  - SESSION fix (#55): PASS — proper merge confirmed
-  - EMIT ON WINDOW CLOSE (#52): PASS — stream accepts EOWC clause, outputs received
-  - INTERVAL arithmetic (#69): PASS — INTERVAL on BIGINT columns now works
-  - Late data filtering (#65): PASS — late data not filtered (known embedded executor limitation, filed #86)
-- **Phase 9 (API Surface Tests)**: 7/7 PASS
-  - api::Connection lifecycle: open → DDL → list → close
-  - Catalog introspection: source_info, stream_info, sink_info, get_schema
-  - Pipeline state & metrics: pipeline_state, watermark, total_events, insert()
-  - ArrowSubscription: subscribe → try_next (non-blocking poll)
-  - push_arrow: raw Arrow RecordBatch via SourceHandle::push_arrow()
-  - SourceHandle metadata: name, schema, pending, capacity, is_backpressured, current_watermark
-  - Pipeline topology: node/edge graph introspection
-- **GitHub issues filed**:
-  - [#85](https://github.com/laminardb/laminardb/issues/85): EMIT ON WINDOW CLOSE not wired through embedded SQL executor
-  - [#86](https://github.com/laminardb/laminardb/issues/86): Late data filtering not invoked in embedded SQL executor
-- **CI updated**: test.yml now runs Phase 8, Phase 9, and Criterion benchmarks
+- **Phase 10 (SQL Extensions)**: 3/3 PASS
+  - HAVING clause: filters correctly (405 baseline rows, 0 with impossible threshold)
+  - LAG window function: 1350 rows, 900 with prev_price, 450 with default (works!)
+  - LEAD window function: 1335 rows, 890 with next_price, 445 with default (works!)
+- **Phase 11 (Subscription Modes & Backpressure)**: 4/4 PASS
+  - recv_timeout(): times out when empty, receives data when available
+  - poll_each(): callback-based batch processing (135 rows across 135 batches)
+  - Backpressure: is_backpressured(), pending(), capacity() all functional
+  - Multi-subscriber: single-consumer model confirmed (first subscriber drains channel)
+- **Feature audit**: Analyzed laminardb feature INDEX.md (160 features) to identify untested Done features
+  - ROW_NUMBER/RANK/DENSE_RANK: NOT in AnalyticFunctionType enum — incomplete, skipped
+  - Lookup Joins: Internal operator only, not exposed in SQL — skipped
+  - EMIT CHANGES/FINAL: No EmitStrategy enum in public API — skipped
+  - Changelog/Retraction: Internal Ring 0 only — skipped
+  - subscribe_push/fn/stream: Don't exist — only subscribe() with TypedSubscription<T>
+- **CI updated**: test.yml now runs Phase 10 and Phase 11
 
 ### Where We Left Off
 
-- All 9 phases implemented and passing
+- All 11 phases implemented and passing
 - Governance docs updated to reflect current state
 
 ### Current Phase Status
@@ -52,12 +43,14 @@
 | 7: Stress Test | **PASS** | ~25,554/s Ubuntu CI, ~2,330/s macOS. ASOF works, SESSION merges properly |
 | 8: v0.12.0 Features | **PASS** | 5/5: Cascade #35, SESSION #55, EOWC #52, INTERVAL #69, late data #65 |
 | 9: API Surface | **PASS** | 7/7: Connection, catalog, metrics, subscribe, push_arrow, metadata, topology |
+| 10: SQL Extensions | **PASS** | 3/3: HAVING, LAG, LEAD |
+| 11: Subscriptions | **PASS** | 4/4: recv_timeout, poll_each, backpressure, multi-subscriber |
 
 ### Immediate Next Steps
 
-1. CDC & Redpanda phases saved for later (Phase 3/5 already test these)
-2. Monitor upstream fixes for issues #85, #86 (embedded executor gaps)
-3. Consider adding Phase 10 for Kafka CDC end-to-end when #58 is fixed
+1. Monitor upstream fixes for issues #85, #86 (embedded executor gaps)
+2. When ROW_NUMBER/RANK added to AnalyticFunctionType enum, add tests
+3. When #58 fixed, add Kafka CDC end-to-end test
 
 ### Key Learnings
 - `laminar-core` required as direct dep (Record derive macro references it)
@@ -81,3 +74,9 @@
 - **Phase 5 CDC**: Native connector blocked by laminardb bug [#58](https://github.com/laminardb/laminardb/issues/58) — tokio-postgres 0.7 lacks replication support
 - **Phase 7 Stress**: Ubuntu CI 11x throughput anomaly — possible causes: shared macOS env (92% RAM), OS scheduler, x86_64 optimizations
 - **Phase 7 Stress**: Criterion bench confirms: 111ms cycle (1 tick) vs 214-238ms (2 ticks) on macOS
+- **HAVING**: Works in embedded SQL — `GROUP BY ... HAVING SUM(volume) > N` correctly filters post-aggregation
+- **LAG/LEAD**: Available via `AnalyticFunctionType::Lag/Lead`. Work in embedded mode. Micro-batch resets partition state per cycle, so LAG returns default for first row in each cycle's partition.
+- **poll_each()**: Callback receives individual `T` items (not `Vec<T>`), must return `bool` (true = continue)
+- **Multi-subscriber**: LaminarDB uses single-consumer model — first `subscribe()` drains the channel, second gets nothing
+- **Backpressure**: `is_backpressured()` triggers at >80% utilization. Default capacity ~2048 even with `buffer_size(64)`
+- **Not testable yet**: ROW_NUMBER/RANK (not in enum), Lookup Joins (internal operator), EMIT CHANGES/FINAL (no public API), Changelog/Retraction (Ring 0 only)

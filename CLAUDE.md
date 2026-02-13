@@ -15,6 +15,8 @@ cargo run -- phase6    # Bonus: HOP, SESSION, EMIT ON UPDATE
 cargo run -- phase7    # Stress test (6-stream throughput benchmark)
 cargo run -- phase8    # v0.12.0 feature tests (cascading MVs, SESSION, EOWC, INTERVAL, late data)
 cargo run -- phase9    # v0.12.0 API surface tests (api::Connection, push_arrow, metadata, topology)
+cargo run -- phase10   # SQL extensions (HAVING, LAG, LEAD)
+cargo run -- phase11   # Subscription modes & backpressure (recv_timeout, poll_each, multi-sub)
 cargo run              # TUI with all phases as tabs
 ```
 
@@ -34,6 +36,8 @@ src/
 ├── phase7_stress.rs # Phase 7: 6-stream fraud-detect throughput benchmark
 ├── phase8_v012.rs   # Phase 8: v0.12.0 feature tests (5 regression tests)
 ├── phase9_api.rs    # Phase 9: v0.12.0 API surface tests (7 API tests)
+├── phase10_sql_ext.rs # Phase 10: SQL extensions (HAVING, LAG, LEAD)
+├── phase11_subs.rs  # Phase 11: Subscription modes & backpressure (4 tests)
 └── tui.rs           # Ratatui TUI with animated pipeline flow visualization
 docs/
 ├── CONTEXT.md       # Session continuity (where we left off)
@@ -135,3 +139,5 @@ Feature flags: `kafka` (Kafka connectors), `postgres-cdc` (CDC connector), `api`
 | 7 | Stress Test | 6-stream fraud-detect pipeline, 7-level ramp | **PASS** (~25,554/s Ubuntu CI, ~2,330/s macOS) |
 | 8 | v0.12.0 Features | Cascading MVs #35, SESSION #55, EOWC #52, INTERVAL #69, late data #65 | **PASS** (5/5) |
 | 9 | API Surface | api::Connection #49, push_arrow #64, SourceHandle metadata, topology | **PASS** (7/7) |
+| 10 | SQL Extensions | HAVING clause, LAG window function, LEAD window function | **PASS** (3/3) |
+| 11 | Subscriptions | recv_timeout, poll_each, backpressure detection, multi-subscriber | **PASS** (4/4) |

@@ -211,6 +211,34 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           exit 0
 
+      - name: "Phase 10: SQL Extensions"
+        id: phase10
+        timeout-minutes: 5
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase10 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: "Phase 11: Subscription Modes & Backpressure"
+        id: phase11
+        timeout-minutes: 5
+        run: |
+          set +e
+          OUTPUT=$(cargo run -- phase11 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
       - name: "Phase 7: Stress Test (6-stream fraud-detect pipeline)"
         id: phase7
         timeout-minutes: 10
@@ -261,6 +289,8 @@ jobs:
           P7_OUT: ${{ steps.phase7.outputs.output }}
           P8_OUT: ${{ steps.phase8.outputs.output }}
           P9_OUT: ${{ steps.phase9.outputs.output }}
+          P10_OUT: ${{ steps.phase10.outputs.output }}
+          P11_OUT: ${{ steps.phase11.outputs.output }}
           BENCH_OUT: ${{ steps.bench.outputs.output }}
         run: |
           extract_status() {
@@ -287,6 +317,8 @@ jobs:
           P7_STATUS=$(extract_status "$P7_OUT")
           P8_STATUS=$(extract_status "$P8_OUT")
           P9_STATUS=$(extract_status "$P9_OUT")
+          P10_STATUS=$(extract_status "$P10_OUT")
+          P11_STATUS=$(extract_status "$P11_OUT")
 
           STATUS_EMOJI() {
             case "$1" in
@@ -313,12 +345,14 @@ jobs:
           echo "| 7 | Stress Test | $(STATUS_EMOJI $P7_STATUS) $P7_STATUS | 6-stream fraud-detect pipeline, 7-level ramp, throughput benchmark |" >> $GITHUB_STEP_SUMMARY
           echo "| 8 | v0.12.0 Features | $(STATUS_EMOJI $P8_STATUS) $P8_STATUS | Cascading MVs #35, SESSION fix #55, EMIT ON WINDOW CLOSE #52, INTERVAL #69, late data #65 |" >> $GITHUB_STEP_SUMMARY
           echo "| 9 | API Surface | $(STATUS_EMOJI $P9_STATUS) $P9_STATUS | api::Connection #49, push_arrow #64, SourceHandle metadata, topology, metrics |" >> $GITHUB_STEP_SUMMARY
+          echo "| 10 | SQL Extensions | $(STATUS_EMOJI $P10_STATUS) $P10_STATUS | HAVING clause, LAG window function, LEAD window function |" >> $GITHUB_STEP_SUMMARY
+          echo "| 11 | Subscriptions | $(STATUS_EMOJI $P11_STATUS) $P11_STATUS | recv_timeout, poll_each, backpressure detection, multi-subscriber |" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Phase Output" >> $GITHUB_STEP_SUMMARY
 
           # Truncate phase outputs to last 30 lines each to stay under 1024k step summary limit
-          for PHASE in 1 2 3 4 5 6 8 9; do
+          for PHASE in 1 2 3 4 5 6 8 9 10 11; do
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "<details>" >> $GITHUB_STEP_SUMMARY
             echo "<summary>Phase ${PHASE} output (last 30 lines)</summary>" >> $GITHUB_STEP_SUMMARY
@@ -333,6 +367,8 @@ jobs:
               6) echo "$P6_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
               8) echo "$P8_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
               9) echo "$P9_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              10) echo "$P10_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
+              11) echo "$P11_OUT" | tail -30 >> $GITHUB_STEP_SUMMARY ;;
             esac
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY

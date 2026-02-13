@@ -8,7 +8,7 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 
 ## Current Focus
 
-**All 9 phases implemented and passing.** v0.12.0 feature tests (Phase 8) and API surface tests (Phase 9) complete. Monitoring upstream fixes for embedded executor gaps (#85, #86).
+**All 11 phases implemented and passing.** SQL extensions (Phase 10) and subscription modes (Phase 11) added. Monitoring upstream fixes for embedded executor gaps (#85, #86).
 
 ## Phase Priority Order
 
@@ -23,6 +23,8 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 7 (done) | Stress Test | 6-stream fraud-detect pipeline, 7-level throughput ramp | None | **PASS** |
 | 8 (done) | v0.12.0 Features | Cascading MVs #35, SESSION #55, EOWC #52, INTERVAL #69, late data #65 | None | **PASS** (5/5) |
 | 9 (done) | API Surface | api::Connection #49, push_arrow #64, SourceHandle metadata, topology | None | **PASS** (7/7) |
+| 10 (done) | SQL Extensions | HAVING clause, LAG window function, LEAD window function | None | **PASS** (3/3) |
+| 11 (done) | Subscriptions | recv_timeout, poll_each, backpressure, multi-subscriber | None | **PASS** (4/4) |
 
 ## Test Matrix
 
@@ -75,6 +77,13 @@ Test every LaminarDB pipeline type from the laminardb.io website code examples, 
 | 9 | push_arrow | v0.12.0 API (PR #64) | **PASS** (raw RecordBatch ingestion) |
 | 9 | SourceHandle metadata | v0.12.0 API (PR #64) | **PASS** (name, schema, pending, capacity, backpressure, watermark) |
 | 9 | Pipeline topology | v0.12.0 API (PR #49) | **PASS** (nodes + edges graph) |
+| 10 | HAVING clause | Feature spec F-SQL-004 | **PASS** (filters correctly, 0 rows with impossible threshold) |
+| 10 | LAG window function | Feature spec F-SQL-002 | **PASS** (900 with prev_price, 450 default) |
+| 10 | LEAD window function | Feature spec F-SQL-002 | **PASS** (890 with next_price, 445 default) |
+| 11 | recv_timeout() | TypedSubscription API | **PASS** (times out when empty, receives when data available) |
+| 11 | poll_each() | TypedSubscription API | **PASS** (callback-based, 135 rows via closure) |
+| 11 | Backpressure detection | SourceHandle API | **PASS** (is_backpressured, pending, capacity) |
+| 11 | Multiple subscribers | LaminarDB subscribe model | **PASS** (single-consumer: first subscriber drains channel) |
 
 ## Decisions
 
