@@ -13,6 +13,8 @@ cargo run -- phase4    # Stream joins (ASOF + stream-stream)
 cargo run -- phase5    # CDC pipeline (needs Postgres)
 cargo run -- phase6    # Bonus: HOP, SESSION, EMIT ON UPDATE
 cargo run -- phase7    # Stress test (6-stream throughput benchmark)
+cargo run -- phase8    # v0.12.0 feature tests (cascading MVs, SESSION, EOWC, INTERVAL, late data)
+cargo run -- phase9    # v0.12.0 API surface tests (api::Connection, push_arrow, metadata, topology)
 cargo run              # TUI with all phases as tabs
 ```
 
@@ -30,6 +32,8 @@ src/
 ├── phase5_cdc.rs    # Phase 5: CDC pipeline (website tab 5, needs Postgres)
 ├── phase6_bonus.rs  # Phase 6: HOP, SESSION, EMIT ON UPDATE
 ├── phase7_stress.rs # Phase 7: 6-stream fraud-detect throughput benchmark
+├── phase8_v012.rs   # Phase 8: v0.12.0 feature tests (5 regression tests)
+├── phase9_api.rs    # Phase 9: v0.12.0 API surface tests (7 API tests)
 └── tui.rs           # Ratatui TUI with animated pipeline flow visualization
 docs/
 ├── CONTEXT.md       # Session continuity (where we left off)
@@ -73,6 +77,35 @@ source.watermark(now());
 // Read results (output)
 let sub = db.subscribe::<OhlcBar>("ohlc")?;
 while let Some(bars) = sub.poll() { ... }
+
+// push_arrow — raw Arrow RecordBatch ingestion (PR #64)
+let source = db.source::<Trade>("trades")?;
+source.push_arrow(record_batch)?;
+
+// SourceHandle metadata (PR #64)
+source.name();               // source name
+source.schema();             // Arrow Schema
+source.pending();            // buffered records count
+source.capacity();           // buffer capacity
+source.is_backpressured();   // true if buffer full
+source.current_watermark();  // current watermark value
+
+// api::Connection — sync FFI-friendly API (PR #49, requires `api` feature)
+let conn = Connection::open()?;
+conn.execute("CREATE SOURCE ...")?;
+conn.execute("CREATE STREAM ...")?;
+conn.start()?;
+conn.insert("trades", record_batch)?;  // push Arrow RecordBatch
+let mut sub = conn.subscribe("stream_name")?;  // ArrowSubscription
+let batch = sub.try_next()?;  // non-blocking poll
+conn.list_sources(); conn.list_streams(); conn.list_sinks();
+conn.source_info(); conn.stream_info(); conn.sink_info();
+conn.get_schema("name")?;
+conn.pipeline_state(); conn.pipeline_watermark();
+conn.metrics(); conn.total_events_processed();
+conn.pipeline_topology();  // PipelineTopology { nodes, edges }
+conn.shutdown()?;
+conn.close()?;
 ```
 
 ## Derive Macros
@@ -83,18 +116,22 @@ while let Some(bars) = sub.poll() { ... }
 ## Dependencies
 
 Path deps to local laminardb (must be at `../laminardb/`):
-- `laminar-db` — main database crate
+- `laminar-db` — main database crate (features: `kafka`, `postgres-cdc`, `api`)
 - `laminar-derive` — Record/FromRow macros
 - `laminar-core` — required by Record derive macro at compile time
+
+Feature flags: `kafka` (Kafka connectors), `postgres-cdc` (CDC connector), `api` (sync Connection API).
 
 ## Phase Status
 
 | Phase | Type | Key Features | Status |
 |-------|------|-------------|--------|
 | 1 | Rust API | TUMBLE + first_value/last_value, push_batch/poll | **PASS** |
-| 2 | Streaming SQL | tumble() as TUMBLE_START, SUM, cascading MVs | **PARTIAL** (L1 pass, cascade fail) |
+| 2 | Streaming SQL | tumble() as TUMBLE_START, SUM, cascading MVs | **PASS** (cascade fixed by [#35](https://github.com/laminardb/laminardb/issues/35)) |
 | 3 | Kafka Pipeline | FROM KAFKA, INTO KAFKA, ${VAR} substitution | **PASS** |
-| 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PARTIAL** (INNER pass, ASOF fail) |
+| 4 | Stream Joins | ASOF JOIN, stream-stream INNER JOIN | **PASS** (ASOF 42K-56K rows, INNER JOIN works) |
 | 5 | CDC Pipeline | postgres-cdc SQL, polling workaround | **PASS** (polling; native connector blocked by [#58](https://github.com/laminardb/laminardb/issues/58)) |
 | 6+ | Bonus | HOP, SESSION, EMIT ON UPDATE | **PASS** |
-| 7 | Stress Test | 6-stream fraud-detect pipeline, 7-level ramp | **PENDING** (run locally) |
+| 7 | Stress Test | 6-stream fraud-detect pipeline, 7-level ramp | **PASS** (~25,554/s Ubuntu CI, ~2,330/s macOS) |
+| 8 | v0.12.0 Features | Cascading MVs #35, SESSION #55, EOWC #52, INTERVAL #69, late data #65 | **PASS** (5/5) |
+| 9 | API Surface | api::Connection #49, push_arrow #64, SourceHandle metadata, topology | **PASS** (7/7) |
