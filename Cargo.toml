@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 # LaminarDB (path deps to local checkout)
-laminar-db = { path = "../laminardb/crates/laminar-db", features = ["kafka", "postgres-cdc"] }
+laminar-db = { path = "../laminardb/crates/laminar-db", features = ["kafka", "postgres-cdc", "api"] }
 laminar-derive = { path = "../laminardb/crates/laminar-derive" }
 laminar-core = { path = "../laminardb/crates/laminar-core" }
 
